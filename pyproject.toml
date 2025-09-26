@@ -1,0 +1,21 @@
+[project]
+name = "ecir26-topic-adapters-as-judges"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "aquarel>=0.0.7",
+    "ir-datasets==0.5.11",
+    "jupyter==1.1.1",
+    "lightning-ir",
+    "pandas==2.3.2",
+    "pandas-stubs==2.3.2.250827",
+    "peft>=0.17.1",
+    "seaborn>=0.13.2",
+    "sentence-transformers>=5.1.0",
+    "statsmodels>=0.14.5",
+    "trectools>=0.0.50",
+]
+
+[tool.uv.sources]
+lightning-ir = { git = "https://github.com/webis-de/lightning-ir.git", rev = "adapters" }
