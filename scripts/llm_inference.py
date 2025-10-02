@@ -24,7 +24,11 @@ def get_messages_few_shot(query, document, examples):
     messages = [
         {
             "role": "system",
-            "content": "Please assess the Relevance of the provided Passage to the following Query, like in the given examples. Please only output \"1\" (relevant) or \"0\" (irrelevant). "
+            "content": "You are a helpful assistant. "
+        },
+        {
+            "role": "user",
+            "content": f"Query: \"{query}\"\nPassage: \"{document}\"\nScore the relevance of the passage to the query using the scale from 0 to 3. Provide only the integer score as your response, with no additional text."
         }
     ]
     for ex_query, ex_document, ex_relevance in examples:
@@ -120,7 +124,7 @@ def load_errors(error_file, predict_qrels):
         # Parse prompt string to extract prompt type and num_examples
         if "_" in prompt_str and prompt_str.startswith("few_shot"):
             prompt = "few_shot"
-            num_examples = int(prompt_str.split("_")[-1])
+            num_examples = 8 #int(prompt_str.split("_")[-1])
         else:
             prompt = prompt_str
             num_examples = 8  # default for non-few_shot
@@ -268,9 +272,9 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
 
         for _, row in predict_qrels.iterrows():
             for get_messages, prompt in [
-                (get_messages_few_shot, "few_shot"),
-                (get_messages_umbrela, "umbrela"),
-                (get_messages_human, "human")
+                (get_messages_few_shot, "few_shot_umbrela"),
+                #(get_messages_umbrela, "umbrela"),
+                #(get_messages_human, "human")
             ]:
                 for num_examples in [8]:
                     task = process_request(
@@ -323,7 +327,7 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run GPT-4o relevance inference with async requests")
     parser.add_argument("--data-dir", type=str, default="../data", help="Path to data directory")
-    parser.add_argument("--output", type=str, default="predictions.jsonl", help="Output file path")
+    parser.add_argument("--output", type=str, default="predictions_few_shot_umbrela.jsonl", help="Output file path")
     parser.add_argument("--max-concurrent", type=int, default=500, help="Max concurrent requests")
     parser.add_argument("--dry-run", action="store_true", help="Estimate cost without making API calls")
     parser.add_argument("--retry-errors", type=str, help="Path to errors file to retry failed requests")
