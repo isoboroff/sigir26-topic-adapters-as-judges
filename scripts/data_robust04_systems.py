@@ -34,7 +34,7 @@ def main(run_path: str = "../data/external/robust04-runs/*.gz", output_path: str
             eval.get_ndcg(depth=10, per_query=True)
             .reset_index()
             .assign(system=run.get_runid())
-            .query("query in @topics")
+            .query("query in @TOPICS")
         )
 
     df = pd.concat(eval_data)

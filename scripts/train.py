@@ -34,11 +34,11 @@ class BiEncoderLoRA(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
-        
+
         # Load the base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
-        
+
         # Configure LoRA
         if lora:
             lora_config = LoraConfig(
@@ -73,17 +73,17 @@ class BiEncoderLoRA(pl.LightningModule):
         summed_mask = torch.clamp(mask.sum(1), min=1e-9)
         mean_pooled = summed / summed_mask
         return self.projection(mean_pooled)
-    
+
     def forward(self, query_input_ids, query_attention_mask, doc_input_ids, doc_attention_mask):
         query_emb = self.encode_text(query_input_ids, query_attention_mask)
         doc_emb = self.encode_text(doc_input_ids, doc_attention_mask)
         # Cosine similarity
         similarity = torch.nn.functional.cosine_similarity(query_emb, doc_emb)
         return (similarity + 1)/2
-    
+
     def training_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(
+        preds = self.forward(
             batch['query_input_ids'], batch['query_attention_mask'],
             batch['doc_input_ids'], batch['doc_attention_mask']
         )
@@ -95,7 +95,7 @@ class BiEncoderLoRA(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(
+        preds = self.forward(
             batch['query_input_ids'], batch['query_attention_mask'],
             batch['doc_input_ids'], batch['doc_attention_mask']
         )
@@ -106,7 +106,10 @@ class BiEncoderLoRA(pl.LightningModule):
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
 
         return loss
-    
+
+    def predict_step(self, batch, batch_idx):
+        return self.forward(batch['input_ids'], batch['attention_mask'])
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return {"optimizer": optimizer}
@@ -117,11 +120,11 @@ class CrossEncoderLoRA(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
-        
+
         # Load the base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
-        
+
         # Configure LoRA
         if lora:
             lora_config = LoraConfig(
@@ -144,29 +147,32 @@ class CrossEncoderLoRA(pl.LightningModule):
             "f1": F1Score(task="binary"),
         })
 
-    
+
     def forward(self, input_ids, attention_mask):
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         return torch.sigmoid(outputs.logits.squeeze(-1))
-    
+
     def training_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(batch['input_ids'], batch['attention_mask'])
+        preds = self.forward(batch['input_ids'], batch['attention_mask'])
         weight = (labels * 0.9) + 0.05
         loss = torch.nn.functional.mse_loss(preds, labels, weight=weight)
         self.log('loss_train', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
-    
+
     def test_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(batch['input_ids'], batch['attention_mask'])
+        preds = self.forward(batch['input_ids'], batch['attention_mask'])
         weight = (labels * 0.9) + 0.05
         loss = torch.nn.functional.mse_loss(preds, labels, weight=weight)
         self.log('loss_test', loss, on_step=False, on_epoch=True, prog_bar=False)
         self.metrics((preds > 0.5).int(), (labels > 0.5).int())
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
         return loss
-    
+
+    def predict_step(self, batch, batch_idx):
+        return self.forward(batch['input_ids'], batch['attention_mask'])
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return {"optimizer": optimizer}
@@ -223,7 +229,7 @@ class MonoDecoderLoRA(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(batch['input_ids'], batch['attention_mask'])
+        preds = self.forward(batch['input_ids'], batch['attention_mask'])
         weight = (labels * 0.9) + 0.05
         loss = torch.nn.functional.mse_loss(preds, labels, weight=weight)
         self.log('loss_train', loss, on_step=True, on_epoch=True, prog_bar=True)
@@ -231,7 +237,7 @@ class MonoDecoderLoRA(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
-        preds = self(batch['input_ids'], batch['attention_mask'])
+        preds = self.forward(batch['input_ids'], batch['attention_mask'])
         weight = (labels * 0.9) + 0.05
         loss = torch.nn.functional.mse_loss(preds, labels, weight=weight)
         self.log('loss_test', loss, on_step=False, on_epoch=True, prog_bar=False)
@@ -239,14 +245,17 @@ class MonoDecoderLoRA(pl.LightningModule):
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
         return loss
 
+    def predict_step(self, batch, batch_idx):
+        return self.forward(batch['input_ids'], batch['attention_mask'])
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return {"optimizer": optimizer}
 
 
 class RelevanceDataModule(pl.LightningDataModule):
-    def __init__(self, data_path="../data/external/robust04.parquet", query_id="301", 
-                 tokenizer=None, batch_size=16, max_length=512, train_split=0.8, 
+    def __init__(self, data_path="../data/external/robust04.parquet", query_id="301",
+                 tokenizer=None, batch_size=16, max_length=512, train_split=0.8,
                  num_workers=4, encoder_type="cross", binary: bool = True):
         super().__init__()
         self.data_path = data_path
@@ -258,7 +267,7 @@ class RelevanceDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.encoder_type = encoder_type
         self.binary = binary
-        
+
     def setup(self, stage=None):
         # Load and split data
         data = pd.read_parquet(self.data_path)
@@ -272,26 +281,33 @@ class RelevanceDataModule(pl.LightningDataModule):
         pos = topic_sample[topic_sample["relevance"] > 0]
         neg = topic_sample[topic_sample["relevance"] == 0]
 
-        train_end_pos = int(len(pos) * self.train_split)
-        train_end_neg = int(len(neg) * self.train_split)
+        if isinstance(self.train_split, float):
+            train_end_pos = int(len(pos) * self.train_split)
+            train_end_neg = int(len(neg) * self.train_split)
+        elif isinstance(self.train_split, int):
+            train_end_pos = int(self.train_split * 0.125)
+            train_end_neg = self.train_split - train_end_pos
+        else:
+            raise NotImplementedError
+
         self.train_data = pd.concat([
             pos.iloc[:train_end_pos],
             neg.iloc[:train_end_neg]
-        ]).loc[:, ["query", "doc", "relevance"]]
+        ]).loc[:, ["query_id", "query", "doc_id", "doc", "relevance"]]
         self.test_data = pd.concat([
             pos.iloc[train_end_pos:],
             neg.iloc[train_end_neg:]
-        ]).loc[:, ["query", "doc", "relevance"]]
-        
+        ]).loc[:, ["query_id", "query", "doc_id", "doc", "relevance"]]
+
         # Create datasets
-        self.train_dataset = RelevanceDataset(self.train_data)
-        self.test_dataset = RelevanceDataset(self.test_data)
-    
+        self.train_dataset = RelevanceDataset(self.train_data.loc[:, ["query", "doc", "relevance"]])
+        self.test_dataset = RelevanceDataset(self.test_data.loc[:, ["query", "doc", "relevance"]])
+
     def collate_fn(self, batch):
         queries = [item['query'] for item in batch]
         docs = [item['doc'] for item in batch]
         relevances = [item['relevance'] for item in batch]
-        
+
         if self.encoder_type == "cross":
             # Cross-encoder: tokenize query-document pairs together
             encoding = self.tokenizer(
@@ -302,7 +318,7 @@ class RelevanceDataModule(pl.LightningDataModule):
                 max_length=self.max_length,
                 return_tensors='pt'
             )
-            
+
             return {
                 'input_ids': encoding['input_ids'],
                 'attention_mask': encoding['attention_mask'],
@@ -324,7 +340,7 @@ class RelevanceDataModule(pl.LightningDataModule):
                 max_length=self.max_length,
                 return_tensors='pt'
             )
-            
+
             return {
                 'query_input_ids': query_encoding['input_ids'],
                 'query_attention_mask': query_encoding['attention_mask'],
@@ -332,21 +348,30 @@ class RelevanceDataModule(pl.LightningDataModule):
                 'doc_attention_mask': doc_encoding['attention_mask'],
                 'labels': torch.tensor(relevances, dtype=torch.float)
             }
-        
+
     def train_dataloader(self):
         return DataLoader(
-            self.train_dataset, 
-            batch_size=self.batch_size, 
-            shuffle=True, 
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
             num_workers=self.num_workers,
             collate_fn=self.collate_fn
         )
-    
+
     def test_dataloader(self):
         return DataLoader(
-            self.test_dataset, 
-            batch_size=self.batch_size, 
-            shuffle=False, 
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=self.collate_fn
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
             num_workers=self.num_workers,
             collate_fn=self.collate_fn
         )
@@ -371,10 +396,10 @@ def main(
     split,
     seed
 ):
-    
+
     pl.seed_everything(seed)
     run = f"{encoder_type}-{model_name.split('/')[-1]}-{'lora' if lora else 'native'}-{query_id}"
-    logger = pl.loggers.CSVLogger("logs", name=run)
+    logger = pl.loggers.CSVLogger("logs_shallow", name=run)
 
     if encoder_type == "cross":
         model = CrossEncoderLoRA(
@@ -421,9 +446,7 @@ def main(
     trainer = pl.Trainer(
         logger=logger,
         max_epochs=max_epochs,
-        accelerator="auto",
-        devices="auto",
-        accumulate_grad_batches=accumulate_batches,
+        accelerator="auto",         devices="auto",         accumulate_grad_batches=accumulate_batches,
         callbacks=[],
         enable_checkpointing=False,
     )
@@ -435,27 +458,30 @@ def main(
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     model_save_path = output_dir / run
-    model.model.save_pretrained(str(model_save_path))
-    model.tokenizer.save_pretrained(str(model_save_path))
-    print(f"Model saved to {model_save_path}")
+    #model.model.save_pretrained(str(model_save_path))
+    #model.tokenizer.save_pretrained(str(model_save_path))
+    #print(f"Model saved to {model_save_path}")
 
     if predict:
-        predictions = trainer.predict(model, data_module.test_dataloader())[0]
-        with open(f"{output_dir}/{run}/predictions.json", "w") as f:
-            json.dump(predictions, f)
+        model_save_path.mkdir(exist_ok=True)
+        ids = data_module.test_data.loc[:, ["query_id", "doc_id"]].values.tolist()
+        predictions = trainer.predict(model, data_module)
+        predictions = [x.cpu().tolist() for y in predictions for x in y]
+        predictions = [(q, d, s) for ((q, d), s) in zip(ids, predictions)]
+        with open(f"{model_save_path}/predictions.json", "w") as f:
+            for (q, d, s) in predictions:
+                f.write(json.dumps({"query_id": q, "doc_id": d, "relevance": s}) + "\n")
         print(f"Predictions saved to {output_dir}/{run}/predictions.json")
 
     return metrics
 
 def main_args():
     parser = argparse.ArgumentParser(description="Train Encoder with LoRA")
-    parser.add_argument("--encoder_type", type=str, choices=["cross", "bi", "mono"], default="cross",
-                        help="Type of encoder: cross-encoder or bi-encoder")
+    parser.add_argument("--encoder_type", type=str, choices=["cross", "bi", "mono"], default="cross",                         help="Type of encoder: cross-encoder or bi-encoder")
     parser.add_argument("--data_path", type=str, default="../data/external/robust04.parquet")
     parser.add_argument("--query_id", type=str, default="301")
     parser.add_argument("--lora", type=bool, default=False)
-    parser.add_argument("--model_name", type=str, default="cross-encoder/ms-marco-MiniLM-L12-v2",
-                        help="Model name for cross-encoder, or sentence transformer model for bi-encoder")
+    parser.add_argument("--model_name", type=str, default="cross-encoder/ms-marco-MiniLM-L12-v2",                         help="Model name for cross-encoder, or sentence transformer model for bi-encoder")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--accumulate_batches", type=int, default=1)
     parser.add_argument("--max_epochs", type=int, default=5)
@@ -470,7 +496,7 @@ def main_args():
     parser.add_argument("--split", type=float, default=0.8, help="Size of train split per topic")
     parser.add_argument("--seed", type=int, default=159410123, help="Random seed")
     args = parser.parse_args()
-    
+
     main(
         encoder_type=args.encoder_type,
         data_path=args.data_path,
@@ -493,46 +519,62 @@ def main_args():
     )
 
 if __name__ == "__main__":
-    topics = ['301', '304', '306', '307', '311', '318', '319', '321', '324', '331',
-       '332', '343', '346', '347', '352', '353', '354', '357', '360', '367',
-       '370', '374', '376', '383', '389', '390', '391', '392', '395', '398',
-       '399', '400', '401', '404', '408', '412', '415', '418', '422', '424',
-       '425', '426', '428', '431', '434', '435', '436', '438', '439', '443',
-       '446', '450', '631', '656', '683', '688', '700']
-
+    # Robust04
+    #topics = ['301', '304', '306', '307', '311', '318', '319', '321', '324', '331',
+    #   '332', '343', '346', '347', '352', '353', '354', '357', '360', '367',
+    #   '370', '374', '376', '383', '389', '390', '391', '392', '395', '398',
+    #   '399', '400', '401', '404', '408', '412', '415', '418', '422', '424',
+    #   '425', '426', '428', '431', '434', '435', '436', '438', '439', '443',
+    #   '446', '450', '631', '656', '683', '688', '700']
+    # TREC-Dl
+    topics = [
+        "156493", "168216", "443396", "855410", "1106007", "1110199", "1129237", "47210", "451602", "489204", "1112341",
+        "1114646", "1114819", "1117099", "1133167", "1129237", "47210", "67316", "135802", "174463", "332593", "701453",
+        "730539", "938400", "1064670", "1109707", "1113256", "1116380", "1121353", "1127540", "1132532", "1136047",
+        "47923", "104861", "915593", "962179", "1037798", "1063750", "121171", "156498", "405163", "640502", "914916",
+        "1105792", "1115210", "1136043", "1136962", "131843", "182539", "183378", "207786", "264014", "451602",
+        "489204", "1112341", "1114646", "1114819", "1117099", "1133167", "23849", "141630", "169208", "324585",
+        "330975", "390360", "768208", "940547", "997622", "1030303", "1037496", "1043135", "1106979", "1131069",
+        "1133579", "19335", "87181", "87452", "130510", "146187", "148538", "359349", "405717", "490595", "527433",
+        "573724", "833860", "1103812", "1113437", "1115776", "1121402", "1121709", "1124210", "42255", "118440",
+        "258062", "336901", "555530", "583468", "673670", "877809", "911232", "1051399", "1071750", "1108651",
+        "1110678", "1122767"
+    ]
     models = [
         ("mono", "castorini/monot5-base-msmarco-10k"),
-        ("bi", "sentence-transformers/all-MiniLM-L6-v2"),
-        ("cross", "cross-encoder/ms-marco-MiniLM-L12-v2"),
+        #("bi", "sentence-transformers/all-MiniLM-L6-v2"),
+        #("cross", "cross-encoder/ms-marco-MiniLM-L12-v2"),
     ]
+    splits = [64, 128, 192, 256]
     data = []
-    with open("exp1.json", "w") as f:
-        pbar = tqdm(total=len(models) * len(topics))
+    with open("exp2b.json", "w") as f:
+        pbar = tqdm(total=len(models) * len(topics) * len(splits))
         for encoder_type, model_name in models:
-            for topic in topics:
-                metrics = main(
-                    encoder_type=encoder_type,
-                    data_path="data/external/train-robust04.parquet",
-                    query_id=topic,
-                    lora=False,
-                    model_name=model_name,
-                    batch_size=32,
-                    accumulate_batches=2,
-                    max_epochs=10,
-                    learning_rate=1e-4,
-                    lora_r=64,
-                    lora_alpha=128,
-                    lora_dropout=0.1,
-                    max_length=512,
-                    output_dir="output_robust04",
-                    binary=True,
-                    predict=True,
-                    seed=159410123,
-                )
-                f.write(json.dumps({
-                    "topic": topic,
-                    "encoder_type": encoder_type,
-                    "model_name": model_name,
-                    "metrics": metrics,
-                }) + "\n")
-                pbar.update(1)
+            for split in splits:
+                for topic in topics:
+                    metrics = main(
+                        encoder_type=encoder_type,
+                        data_path="data/external/train-trecdl.parquet",                         query_id=topic,
+                        lora=True,
+                        model_name=model_name,
+                        batch_size=32,
+                        accumulate_batches=2,
+                        max_epochs=25,
+                        learning_rate=1e-4,
+                        lora_r=64,
+                        lora_alpha=128,
+                        lora_dropout=0.1,
+                        max_length=512,
+                        output_dir=f"output_trecdl_shallow_{split}",                         binary=True,
+                        predict=True,
+                        split=split,
+                        seed=159410123,
+                    )
+                    f.write(json.dumps({
+                        "topic": topic,
+                        "encoder_type": encoder_type,
+                        "model_name": model_name,
+                        "split": split,
+                        "metrics": metrics,
+                    }) + "\n")
+                    pbar.update(1)
