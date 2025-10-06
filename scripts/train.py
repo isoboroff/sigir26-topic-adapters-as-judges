@@ -458,9 +458,9 @@ def main(
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     model_save_path = output_dir / run
-    #model.model.save_pretrained(str(model_save_path))
+    model.model.save_pretrained(str(model_save_path))
     #model.tokenizer.save_pretrained(str(model_save_path))
-    #print(f"Model saved to {model_save_path}")
+    print(f"Model saved to {model_save_path}")
 
     if predict:
         model_save_path.mkdir(exist_ok=True)
@@ -475,19 +475,19 @@ def main(
 
     return metrics
 
-def main_args():
+def cli():
     parser = argparse.ArgumentParser(description="Train Encoder with LoRA")
-    parser.add_argument("--encoder_type", type=str, choices=["cross", "bi", "mono"], default="cross",                         help="Type of encoder: cross-encoder or bi-encoder")
-    parser.add_argument("--data_path", type=str, default="../data/external/robust04.parquet")
-    parser.add_argument("--query_id", type=str, default="301")
+    parser.add_argument("--encoder_type", type=str, choices=["cross", "bi", "mono"], default="mono",                         help="Type of encoder: cross-encoder or bi-encoder")
+    parser.add_argument("--data_path", type=str, required=True)
+    parser.add_argument("--query_id", type=str, required=True)
     parser.add_argument("--lora", type=bool, default=False)
-    parser.add_argument("--model_name", type=str, default="cross-encoder/ms-marco-MiniLM-L12-v2",                         help="Model name for cross-encoder, or sentence transformer model for bi-encoder")
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--model_name", type=str, default="castorini/monot5-base-msmarco-10k",                         help="Model name for cross-encoder, or sentence transformer model for bi-encoder")
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--accumulate_batches", type=int, default=1)
-    parser.add_argument("--max_epochs", type=int, default=5)
-    parser.add_argument("--learning_rate", type=float, default=2e-5)
-    parser.add_argument("--lora_r", type=int, default=16)
-    parser.add_argument("--lora_alpha", type=int, default=32)
+    parser.add_argument("--max_epochs", type=int, default=10)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--lora_r", type=int, default=64)
+    parser.add_argument("--lora_alpha", type=int, default=128)
     parser.add_argument("--lora_dropout", type=float, default=0.1)
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--output_dir", type=str, default="./outputs")
@@ -519,62 +519,4 @@ def main_args():
     )
 
 if __name__ == "__main__":
-    # Robust04
-    #topics = ['301', '304', '306', '307', '311', '318', '319', '321', '324', '331',
-    #   '332', '343', '346', '347', '352', '353', '354', '357', '360', '367',
-    #   '370', '374', '376', '383', '389', '390', '391', '392', '395', '398',
-    #   '399', '400', '401', '404', '408', '412', '415', '418', '422', '424',
-    #   '425', '426', '428', '431', '434', '435', '436', '438', '439', '443',
-    #   '446', '450', '631', '656', '683', '688', '700']
-    # TREC-Dl
-    topics = [
-        "156493", "168216", "443396", "855410", "1106007", "1110199", "1129237", "47210", "451602", "489204", "1112341",
-        "1114646", "1114819", "1117099", "1133167", "1129237", "47210", "67316", "135802", "174463", "332593", "701453",
-        "730539", "938400", "1064670", "1109707", "1113256", "1116380", "1121353", "1127540", "1132532", "1136047",
-        "47923", "104861", "915593", "962179", "1037798", "1063750", "121171", "156498", "405163", "640502", "914916",
-        "1105792", "1115210", "1136043", "1136962", "131843", "182539", "183378", "207786", "264014", "451602",
-        "489204", "1112341", "1114646", "1114819", "1117099", "1133167", "23849", "141630", "169208", "324585",
-        "330975", "390360", "768208", "940547", "997622", "1030303", "1037496", "1043135", "1106979", "1131069",
-        "1133579", "19335", "87181", "87452", "130510", "146187", "148538", "359349", "405717", "490595", "527433",
-        "573724", "833860", "1103812", "1113437", "1115776", "1121402", "1121709", "1124210", "42255", "118440",
-        "258062", "336901", "555530", "583468", "673670", "877809", "911232", "1051399", "1071750", "1108651",
-        "1110678", "1122767"
-    ]
-    models = [
-        ("mono", "castorini/monot5-base-msmarco-10k"),
-        #("bi", "sentence-transformers/all-MiniLM-L6-v2"),
-        #("cross", "cross-encoder/ms-marco-MiniLM-L12-v2"),
-    ]
-    splits = [64, 128, 192, 256]
-    data = []
-    with open("exp2b.json", "w") as f:
-        pbar = tqdm(total=len(models) * len(topics) * len(splits))
-        for encoder_type, model_name in models:
-            for split in splits:
-                for topic in topics:
-                    metrics = main(
-                        encoder_type=encoder_type,
-                        data_path="data/external/train-trecdl.parquet",                         query_id=topic,
-                        lora=True,
-                        model_name=model_name,
-                        batch_size=32,
-                        accumulate_batches=2,
-                        max_epochs=25,
-                        learning_rate=1e-4,
-                        lora_r=64,
-                        lora_alpha=128,
-                        lora_dropout=0.1,
-                        max_length=512,
-                        output_dir=f"output_trecdl_shallow_{split}",                         binary=True,
-                        predict=True,
-                        split=split,
-                        seed=159410123,
-                    )
-                    f.write(json.dumps({
-                        "topic": topic,
-                        "encoder_type": encoder_type,
-                        "model_name": model_name,
-                        "split": split,
-                        "metrics": metrics,
-                    }) + "\n")
-                    pbar.update(1)
+    cli()

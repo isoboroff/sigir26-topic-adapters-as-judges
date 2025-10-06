@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 TOPICS = ['104861', '1063750', '1106007', '1112341', '1113437', '1114646', '1114819', '1117099', '1124210', '1133167', '131843', '148538', '156493', '168216', '182539', '183378', '264014', '359349', '443396', '451602', '47923', '489204', '490595', '527433', '573724', '833860', '87181', '87452', '915593', '1037496', '1051399', '1106979', '1108651', '1109707', '1110678', '1121353', '1122767', '1132532', '1133579', '1136962', '118440', '121171', '141630', '174463', '23849', '330975', '332593', '405163', '47210', '555530', '583468', '640502', '67316', '877809', '914916', '938400', '940547']
 RATIOS = [0.03, 0.04, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-NUM_ITER = 10
+NUM_ITER = 20
 DEPTHS = [5, 10, 20, 50, 100, 1000]
 
 
@@ -201,8 +201,8 @@ def main():
                           trectools.trec_pool_maker.TrecPoolMaker().make_pool(runs, "topX", topX=100).pool.items() for d in
                           v])
         )
-        #for iteration in range(NUM_ITER):
-        #    eval_subsampled(iteration=iteration + 4, runs=runs, original_qrels=original_qrels, original_pool=original_pool, task=task)
+        for iteration in range(NUM_ITER):
+            eval_subsampled(iteration=iteration, runs=runs, original_qrels=original_qrels, original_pool=original_pool, task=task)
         eval_original(runs=runs, original_qrels=original_qrels, task=task)
 
 

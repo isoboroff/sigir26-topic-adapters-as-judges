@@ -12,11 +12,6 @@ import tiktoken
 
 # Tier 5: 10,000 RPM, 30M TPM
 RATE_LIMIT_RPM = 9500
-
-# GPT-4o pricing per 1M tokens
-GPT4O_INPUT_COST = 2.50
-GPT4O_OUTPUT_COST = 10.00
-
 MAX_RETRIES = 3
 
 
@@ -124,7 +119,7 @@ def load_errors(error_file, predict_qrels):
         # Parse prompt string to extract prompt type and num_examples
         if "_" in prompt_str and prompt_str.startswith("few_shot"):
             prompt = "few_shot"
-            num_examples = 8 #int(prompt_str.split("_")[-1])
+            num_examples = int(prompt_str.split("_")[-1])
         else:
             prompt = prompt_str
             num_examples = 8  # default for non-few_shot
@@ -298,19 +293,12 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
         total_input_tokens = sum(r["input_tokens"] for r in results)
         total_output_tokens = sum(r["output_tokens"] for r in results)
 
-        input_cost = (total_input_tokens / 1_000_000) * GPT4O_INPUT_COST
-        output_cost = (total_output_tokens / 1_000_000) * GPT4O_OUTPUT_COST
-        total_cost = input_cost + output_cost
-
         print("\n" + "=" * 60)
-        print("DRY RUN COST ESTIMATE")
+        print("DRY RUN ESTIMATE")
         print("=" * 60)
         print(f"Total requests: {len(results):,}")
-        print(f"Input tokens:   {total_input_tokens:,} (${input_cost:.2f})")
-        print(f"Output tokens:  {total_output_tokens:,} (${output_cost:.2f})")
-        print(f"Total cost:     ${total_cost:.2f}")
-        print(
-            f"Avg tokens/req: {total_input_tokens / len(results):.0f} input, {total_output_tokens / len(results):.0f} output")
+        print(f"Input tokens:   {total_input_tokens:,}")
+        print(f"Output tokens:  {total_output_tokens:,}")
         print("=" * 60)
     else:
         failed_count = len(tasks) - len(results)
@@ -319,13 +307,13 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
         if failed_count > 0:
             print(f"Failed requests logged to {error_file}")
             print(f"\nTo retry failures, run:")
-            print(f"  python script.py --retry-errors {error_file} --output {output_file}")
+            print(f"  python data_llm_inference.py --retry-errors {error_file} --output {output_file}")
 
     return results
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run GPT-4o relevance inference with async requests")
+    parser = argparse.ArgumentParser(description="Run GPT-4o relevance inference")
     parser.add_argument("--data-dir", type=str, default="../data", help="Path to data directory")
     parser.add_argument("--output", type=str, default="predictions_few_shot_umbrela.jsonl", help="Output file path")
     parser.add_argument("--max-concurrent", type=int, default=500, help="Max concurrent requests")
