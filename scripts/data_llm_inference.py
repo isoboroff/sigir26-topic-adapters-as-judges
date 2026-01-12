@@ -7,7 +7,6 @@ import ir_datasets
 import aiolimiter
 from openai import AsyncOpenAI, APITimeoutError, APIError, RateLimitError
 from tqdm.asyncio import tqdm
-from dotenv import dotenv_values
 import tiktoken
 
 # Tier 5: 10,000 RPM, 30M TPM
@@ -130,7 +129,7 @@ def load_errors(error_file, predict_qrels):
     return error_configs
 
 
-async def process_request(row, get_messages, prompt, num_examples,
+async def process_request(model_name, row, get_messages, prompt, num_examples,
                           example_qrels, client, rate_limiter, semaphore, lock,
                           output_file, error_file, dry_run=False):
     query = row["query"].replace('\n', ' ').strip()
@@ -163,7 +162,7 @@ async def process_request(row, get_messages, prompt, num_examples,
             try:
                 async with rate_limiter:
                     completion = await client.chat.completions.create(
-                        model="gpt-4o",
+                        model=model_name,
                         messages=messages,
                         timeout=60.0
                     )
@@ -211,9 +210,11 @@ async def process_request(row, get_messages, prompt, num_examples,
                 return None
 
 
-async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file):
-    config = dotenv_values()
-    client = AsyncOpenAI(api_key=config["OPENAI_API_KEY"]) if not dry_run else None
+async def main(base_url, api_key, model_name, data_dir, output_file, max_concurrent, dry_run, retry_errors_file):
+    if base_url is not None:
+        client = AsyncOpenAI(base_url=base_url, api_key=api_key) if not dry_run else None
+    else:
+        client = AsyncOpenAI(api_key=api_key) if not dry_run else None
 
     print("Loading data...")
     example_qrels, predict_qrels = load_data(data_dir)
@@ -256,9 +257,19 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
             get_messages = prompt_map[prompt]
 
             task = process_request(
-                row, get_messages, prompt, num_examples,
-                example_qrels, client, rate_limiter, semaphore, lock,
-                output_file, error_file, dry_run
+                model_name,
+                row,
+                get_messages,
+                prompt,
+                num_examples,
+                example_qrels,
+                client,
+                rate_limiter,
+                semaphore,
+                lock,
+                output_file,
+                error_file,
+                dry_run
             )
             tasks.append(task)
     else:
@@ -267,15 +278,25 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
 
         for _, row in predict_qrels.iterrows():
             for get_messages, prompt in [
-                (get_messages_few_shot, "few_shot_umbrela"),
-                #(get_messages_umbrela, "umbrela"),
+                #(get_messages_few_shot, "few_shot"),
+                (get_messages_umbrela, "umbrela"),
                 #(get_messages_human, "human")
             ]:
                 for num_examples in [8]:
                     task = process_request(
-                        row, get_messages, prompt, num_examples,
-                        example_qrels, client, rate_limiter, semaphore, lock,
-                        output_file, error_file, dry_run
+                        model_name,
+                        row,
+                        get_messages,
+                        prompt,
+                        num_examples,
+                        example_qrels,
+                        client,
+                        rate_limiter,
+                        semaphore,
+                        lock,
+                        output_file,
+                        error_file,
+                        dry_run
                     )
                     tasks.append(task)
 
@@ -313,7 +334,10 @@ async def main(data_dir, output_file, max_concurrent, dry_run, retry_errors_file
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run GPT-4o relevance inference")
+    parser = argparse.ArgumentParser(description="Run relevance inference")
+    parser.add_argument("--base-url", type=str, default=None, help="Base URL for OpenAI-compatible inference endpoint")
+    parser.add_argument("--api-key", type=str, default=None, help="API key for inference endpoint")
+    parser.add_argument("--model-name", type=str, default="gpt-4o", help="Name of model to use")
     parser.add_argument("--data-dir", type=str, default="../data", help="Path to data directory")
     parser.add_argument("--output", type=str, default="predictions_few_shot_umbrela.jsonl", help="Output file path")
     parser.add_argument("--max-concurrent", type=int, default=500, help="Max concurrent requests")
@@ -321,4 +345,4 @@ if __name__ == "__main__":
     parser.add_argument("--retry-errors", type=str, help="Path to errors file to retry failed requests")
 
     args = parser.parse_args()
-    asyncio.run(main(args.data_dir, args.output, args.max_concurrent, args.dry_run, args.retry_errors))
+    asyncio.run(main(args.base_url, args.api_key, args.model_name, args.data_dir, args.output, args.max_concurrent, args.dry_run, args.retry_errors))

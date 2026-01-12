@@ -446,7 +446,9 @@ def main(
     trainer = pl.Trainer(
         logger=logger,
         max_epochs=max_epochs,
-        accelerator="auto",         devices="auto",         accumulate_grad_batches=accumulate_batches,
+        accelerator="auto",
+        devices="auto",
+        accumulate_grad_batches=accumulate_batches,
         callbacks=[],
         enable_checkpointing=False,
     )
