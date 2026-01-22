@@ -14,7 +14,7 @@ RATE_LIMIT_RPM = 9500
 MAX_RETRIES = 3
 
 
-def get_messages_few_shot(query, document, examples):
+def get_messages_few_shot_umbrela(query, document, examples):
     messages = [
         {
             "role": "system",
@@ -22,7 +22,25 @@ def get_messages_few_shot(query, document, examples):
         },
         {
             "role": "user",
-            "content": f"Query: \"{query}\"\nPassage: \"{document}\"\nScore the relevance of the passage to the query using the scale from 0 to 3. Provide only the integer score as your response, with no additional text."
+            "content": f"Score the relevance of the passage to the query using the scale from 0 to 3. Provide only the integer score as your response, with no additional text."
+        }
+    ]
+    for ex_query, ex_document, ex_relevance in examples:
+        messages.append({"role": "user", "content": f"Query: {ex_query}\nPassage: {ex_document[:4096]}\nRelevance: "})
+        messages.append({"role": "assistant", "content": f"{ex_relevance}"})
+
+    messages.append({
+        "role": "user",
+        "content": f"Query: {query}\nPassage: {document}\nRelevance: "
+    })
+    return messages
+
+
+def get_messages_few_shot_human(query, document, examples):
+    messages = [
+        {
+            "role": "system",
+            "content": "Please assess the Relevance of the provided Passage to the following Query. Please only output \"1\" (relevant) or \"0\" (irrelevant). "
         }
     ]
     for ex_query, ex_document, ex_relevance in examples:
@@ -62,21 +80,6 @@ def get_messages_human(query, document, examples):
     ]
 
 
-def count_tokens(messages, model="gpt-4o"):
-    """Count tokens in messages using tiktoken"""
-    try:
-        encoding = tiktoken.encoding_for_model(model)
-    except KeyError:
-        encoding = tiktoken.get_encoding("cl100k_base")
-
-    num_tokens = 3
-    for message in messages:
-        num_tokens += 3
-        for key, value in message.items():
-            num_tokens += len(encoding.encode(str(value)))
-    return num_tokens
-
-
 def load_data(data_dir):
     qrels = (
         pd.DataFrame(ir_datasets.load("msmarco-passage/trec-dl-2020/judged").qrels_iter())
@@ -87,11 +90,21 @@ def load_data(data_dir):
             pd.read_parquet(f"{data_dir}/processed/trecdl-shallow-qrels-256.parquet")
             .astype({"query_id": str, "doc_id": str})
             .assign(relevance=lambda df: (df["relevance"] > 0.5).astype(int))
-            .rename({"relevance": "relevance_adapter_256"}, axis="columns"),
+            .rename({"relevance": "relevance_adapter_256"}, axis="columns")
+            .sort_values("relevance_adapter_256", ascending=False)
+            .drop_duplicates(["query_id", "doc_id"], keep="first"),
             how="left",
             on=["query_id", "doc_id"],
         )
-        .merge(pd.read_parquet(f"{data_dir}/external/train-trecdl.parquet"))
+        .merge(
+            pd.read_parquet(f"{data_dir}/external/train-trecdl.parquet")
+            .astype({"query_id": str, "doc_id": str})
+            .sort_values("relevance", ascending=False)
+            .drop_duplicates(["query_id", "doc_id"], keep="first")
+            .loc[:, ["query_id", "doc_id", "query", "doc"]],
+            on=["query_id", "doc_id"],
+            how="left"
+        )
         .assign(train=lambda df: df["relevance_adapter_256"].isna())
         .drop(["relevance_adapter_256"], axis=1)
     )
@@ -117,11 +130,11 @@ def load_errors(error_file, predict_qrels):
 
         # Parse prompt string to extract prompt type and num_examples
         if "_" in prompt_str and prompt_str.startswith("few_shot"):
-            prompt = "few_shot"
-            num_examples = int(prompt_str.split("_")[-1])
+            prompt, num_examples = prompt_str.rsplit("_", maxsplit=1)
+            num_examples = int(num_examples)
         else:
             prompt = prompt_str
-            num_examples = 8  # default for non-few_shot
+            num_examples = None  # default for non-few_shot
 
         error_configs.append((query_id, doc_id, prompt, num_examples))
 
@@ -131,32 +144,29 @@ def load_errors(error_file, predict_qrels):
 
 async def process_request(model_name, row, get_messages, prompt, num_examples,
                           example_qrels, client, rate_limiter, semaphore, lock,
-                          output_file, error_file, dry_run=False):
+                          output_file, error_file):
     query = row["query"].replace('\n', ' ').strip()
     document = row["doc"].replace('\n', ' ').strip()
-    examples = (
-        example_qrels
-        .groupby("relevance")
-        .head(int(num_examples / 2))
-        .loc[:, ["query", "doc", "relevance"]]
-        .sample(frac=1.0)
-        .values.tolist()
-    )
+    # Sample few-shot examples from example set
+    if num_examples is not None and num_examples > 0:
+        examples = (
+            example_qrels
+            .groupby("relevance")
+            .head(int(num_examples / 2))
+            .loc[:, ["query", "doc", "relevance"]]
+            .sample(frac=1.0)
+            .values.tolist()
+        )
+    else:
+        examples = []
+
     messages = get_messages(
-        query, document,
-        [(q.replace('\n', ' ').strip(), d.replace('\n', ' ').strip(), r)
-         for q, d, r in examples]
+        query,
+        document,
+        [(q.replace('\n', ' ').strip(), d.replace('\n', ' ').strip(), r) for q, d, r in examples]
     )
 
     async with semaphore:
-        if dry_run:
-            input_tokens = count_tokens(messages)
-            output_tokens = 3
-            return {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens
-            }
-
         # Retry logic
         for attempt in range(MAX_RETRIES):
             try:
@@ -170,7 +180,7 @@ async def process_request(model_name, row, get_messages, prompt, num_examples,
                     result = {
                         "query_id": row["query_id"],
                         "doc_id": row["doc_id"],
-                        "prompt": prompt + f"_{num_examples}" if prompt == "few_shot" else prompt,
+                        "prompt": prompt + f"_{num_examples}" if num_examples is not None else prompt,
                         "relevance": completion.choices[0].message.content
                     }
 
@@ -188,7 +198,7 @@ async def process_request(model_name, row, get_messages, prompt, num_examples,
                     error_record = {
                         "query_id": row["query_id"],
                         "doc_id": row["doc_id"],
-                        "prompt": prompt + f"_{num_examples}" if prompt == "few_shot" else prompt,
+                        "prompt": prompt + f"_{num_examples}" if num_examples is not None else prompt,
                         "error": str(e),
                         "error_type": type(e).__name__
                     }
@@ -200,7 +210,7 @@ async def process_request(model_name, row, get_messages, prompt, num_examples,
                 error_record = {
                     "query_id": row["query_id"],
                     "doc_id": row["doc_id"],
-                    "prompt": prompt + f"_{num_examples}" if prompt == "few_shot" else prompt,
+                    "prompt": prompt + f"_{num_examples}" if num_examples is not None else prompt,
                     "error": str(e),
                     "error_type": type(e).__name__
                 }
@@ -210,37 +220,38 @@ async def process_request(model_name, row, get_messages, prompt, num_examples,
                 return None
 
 
-async def main(base_url, api_key, model_name, data_dir, output_file, max_concurrent, dry_run, retry_errors_file):
-    if base_url is not None:
-        client = AsyncOpenAI(base_url=base_url, api_key=api_key) if not dry_run else None
+async def main(base_url, api_key, model_name, data_dir, output_file, max_concurrent, retry_errors_file):
+    if base_url is not None and api_key is not None:
+        client = AsyncOpenAI(base_url=base_url, api_key=api_key)
     else:
-        client = AsyncOpenAI(api_key=api_key) if not dry_run else None
+        client = AsyncOpenAI(api_key=api_key)
 
     print("Loading data...")
     example_qrels, predict_qrels = load_data(data_dir)
 
     error_file = output_file.replace(".jsonl", "_errors.jsonl")
 
-    if not dry_run and not retry_errors_file:
+    if not retry_errors_file:
         Path(output_file).unlink(missing_ok=True)
         Path(error_file).unlink(missing_ok=True)
 
-    rate_limiter = aiolimiter.AsyncLimiter(max_rate=RATE_LIMIT_RPM, time_period=60) if not dry_run else None
+    rate_limiter = aiolimiter.AsyncLimiter(max_rate=RATE_LIMIT_RPM, time_period=60)
     semaphore = asyncio.Semaphore(max_concurrent)
     lock = asyncio.Lock()
 
     # Map prompt names to functions
-    prompt_map = {
-        "few_shot": get_messages_few_shot,
-        "umbrela": get_messages_umbrela,
-        "human": get_messages_human
-    }
-
     tasks = []
 
     if retry_errors_file:
         # Retry mode: only process failed requests
         error_configs = load_errors(retry_errors_file, predict_qrels)
+
+        prompt_map = {
+            "few_shot_human": get_messages_few_shot_human,
+            "few_shot_umbrela": get_messages_few_shot_umbrela,
+            "umbrela": get_messages_umbrela,
+            "human": get_messages_human
+        }
 
         for query_id, doc_id, prompt, num_examples in error_configs:
             # Find the row in predict_qrels
@@ -268,8 +279,7 @@ async def main(base_url, api_key, model_name, data_dir, output_file, max_concurr
                 semaphore,
                 lock,
                 output_file,
-                error_file,
-                dry_run
+                error_file
             )
             tasks.append(task)
     else:
@@ -277,31 +287,27 @@ async def main(base_url, api_key, model_name, data_dir, output_file, max_concurr
         print(f"Loaded {len(predict_qrels)} queries to process")
 
         for _, row in predict_qrels.iterrows():
-            for get_messages, prompt in [
-                #(get_messages_few_shot, "few_shot"),
-                (get_messages_umbrela, "umbrela"),
-                #(get_messages_human, "human")
+            for get_messages, prompt, num_examples in [
+                (get_messages_few_shot_umbrela, "few_shot_umbrela", 8),
+                (get_messages_few_shot_human, "few_shot_human", 8),
+                (get_messages_umbrela, "umbrela", None),
+                (get_messages_human, "human", None)
             ]:
-                for num_examples in [8]:
-                    task = process_request(
-                        model_name,
-                        row,
-                        get_messages,
-                        prompt,
-                        num_examples,
-                        example_qrels,
-                        client,
-                        rate_limiter,
-                        semaphore,
-                        lock,
-                        output_file,
-                        error_file,
-                        dry_run
-                    )
-                    tasks.append(task)
-
-                    if prompt != "few_shot":
-                        break
+                task = process_request(
+                    model_name,
+                    row,
+                    get_messages,
+                    prompt,
+                    num_examples,
+                    example_qrels,
+                    client,
+                    rate_limiter,
+                    semaphore,
+                    lock,
+                    output_file,
+                    error_file
+                )
+                tasks.append(task)
 
     print(f"Processing {len(tasks)} requests...")
     results = []
@@ -310,25 +316,13 @@ async def main(base_url, api_key, model_name, data_dir, output_file, max_concurr
         if result is not None:
             results.append(result)
 
-    if dry_run:
-        total_input_tokens = sum(r["input_tokens"] for r in results)
-        total_output_tokens = sum(r["output_tokens"] for r in results)
-
-        print("\n" + "=" * 60)
-        print("DRY RUN ESTIMATE")
-        print("=" * 60)
-        print(f"Total requests: {len(results):,}")
-        print(f"Input tokens:   {total_input_tokens:,}")
-        print(f"Output tokens:  {total_output_tokens:,}")
-        print("=" * 60)
-    else:
-        failed_count = len(tasks) - len(results)
-        print(f"\nComplete! Results written to {output_file}")
-        print(f"Successful: {len(results):,} | Failed: {failed_count:,}")
-        if failed_count > 0:
-            print(f"Failed requests logged to {error_file}")
-            print(f"\nTo retry failures, run:")
-            print(f"  python data_llm_inference.py --retry-errors {error_file} --output {output_file}")
+    failed_count = len(tasks) - len(results)
+    print(f"\nComplete! Results written to {output_file}")
+    print(f"Successful: {len(results):,} | Failed: {failed_count:,}")
+    if failed_count > 0:
+        print(f"Failed requests logged to {error_file}")
+        print(f"\nTo retry failures, run:")
+        print(f"  python data_llm_inference.py --retry-errors {error_file} --output {output_file}")
 
     return results
 
@@ -341,8 +335,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", type=str, default="../data", help="Path to data directory")
     parser.add_argument("--output", type=str, default="predictions_few_shot_umbrela.jsonl", help="Output file path")
     parser.add_argument("--max-concurrent", type=int, default=500, help="Max concurrent requests")
-    parser.add_argument("--dry-run", action="store_true", help="Estimate cost without making API calls")
     parser.add_argument("--retry-errors", type=str, help="Path to errors file to retry failed requests")
 
     args = parser.parse_args()
-    asyncio.run(main(args.base_url, args.api_key, args.model_name, args.data_dir, args.output, args.max_concurrent, args.dry_run, args.retry_errors))
+    asyncio.run(main(args.base_url, args.api_key, args.model_name, args.data_dir, args.output, args.max_concurrent, args.retry_errors))
