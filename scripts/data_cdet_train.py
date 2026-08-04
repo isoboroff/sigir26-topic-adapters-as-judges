@@ -15,6 +15,7 @@ def build(args):
     docs = {}
     doc_topics = collections.defaultdict(set)
     topic_docs = collections.defaultdict(set)
+    all_rel = set()
     narratives = {}
 
     for topic in topics:
@@ -27,17 +28,19 @@ def build(args):
                 docs[docid] = None
                 topic_docs[tid].add(docid)
                 doc_topics[docid].add(tid)
+                all_rel.add(docid)
         narratives[tid] = narrative
 
     with gzip.open(args.coll_path, 'rt') as f:
         for line in tqdm(f, desc='Loading documents'):
             doc = json.loads(line)
-            if doc['id'] in docs:
-                docs[doc['id']] = doc['text']
+            docs[doc['id']] = doc['text']
+
+    all_docs = list(docs.keys())
 
     data = []
-    for topic in topic_docs:
-        already_have = set()
+    for topic in tqdm(topic_docs, desc='Building train data'):
+        already_have = all_rel.copy()
         for docid in topic_docs[topic]:
             data.append({
                 'query_id': topic,
@@ -47,19 +50,22 @@ def build(args):
                 'relevance': 1
             })
             already_have.add(docid)
-            have_neg = False
-            while not have_neg:
-                neg_docid = random.choice(list(docs.keys()))
-                if neg_docid not in already_have and topic not in doc_topics[neg_docid]:
+
+        # Add random negatives until we have a ratio of 0.05 rel to 0.95 nonrel
+        for _ in tqdm(range(len(topic_docs[topic]) * 19), desc='Adding negatives', leave=False):
+            got_one = False
+            while not got_one:
+                docid = random.choice(all_docs)
+                if docid not in already_have and topic not in doc_topics[docid]:
                     data.append({
                         'query_id': topic,
-                        'doc_id': neg_docid,
+                        'doc_id': docid,
                         'query': narratives[topic],
-                        'doc': docs[neg_docid],
+                        'doc': docs[docid],
                         'relevance': 0
                     })
-                    already_have.add(neg_docid)
-                    have_neg = True
+                    already_have.add(docid)
+                    got_one = True
 
     pd.DataFrame(data).to_parquet(args.output_path)
 
