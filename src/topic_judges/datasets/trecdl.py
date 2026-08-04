@@ -1,10 +1,15 @@
-import argparse
+"""Judged builder: TREC Deep Learning 2019+2020 (via ir_datasets).
+
+Labels come from explicit qrels (positive and negative), so no negative
+sampling is needed. The two years are concatenated.
+"""
 
 import pandas as pd
 from ir_datasets import load
 
 
-def main(output_path: str):
+def build_train(output_path="data/external/train-trecdl.parquet"):
+    """Build the TREC-DL training parquet by merging 2019 and 2020 judged sets."""
     dataset_19 = load("msmarco-passage/trec-dl-2019/judged")
     dataset_20 = load("msmarco-passage/trec-dl-2020/judged")
 
@@ -23,23 +28,9 @@ def main(output_path: str):
     )
 
     (
-        pd.merge(
-            qrels,
-            queries,
-            on="query_id",
-            how="left"
-        )
-        .merge(
-            docs,
-            on="doc_id",
-            how="left"
-        )
+        pd.merge(qrels, queries, on="query_id", how="left")
+        .merge(docs, on="doc_id", how="left")
         .loc[:, ["query_id", "doc_id", "query", "doc", "relevance"]]
         .to_parquet(output_path)
     )
-
-if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("--output_path", default="../data/external/train-trecdl.parquet")
-    args = arg_parser.parse_args()
-    main(args.output_path)
+    return output_path
