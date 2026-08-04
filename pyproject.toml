@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiolimiter>=1.2.1",
     "aquarel>=0.0.7",
+    "ipython>=9.4.0",
     "ir-datasets==0.5.11",
     "jupyter==1.1.1",
     "krippendorff>=0.8.1",
@@ -22,6 +23,16 @@ dependencies = [
     "tiktoken>=0.11.0",
     "trectools>=0.0.50",
 ]
+
+[project.scripts]
+topic-judges = "topic_judges.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/topic_judges"]
 
 [tool.uv.sources]
 lightning-ir = { git = "https://github.com/webis-de/lightning-ir.git", rev = "adapters" }
