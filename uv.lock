@@ -584,53 +584,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ecir26-topic-adapters-as-judges"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiolimiter" },
-    { name = "aquarel" },
-    { name = "ipython" },
-    { name = "ir-datasets" },
-    { name = "jupyter" },
-    { name = "krippendorff" },
-    { name = "lightning-ir" },
-    { name = "mlx-lm" },
-    { name = "openai" },
-    { name = "pandas" },
-    { name = "pandas-stubs" },
-    { name = "peft" },
-    { name = "python-dotenv" },
-    { name = "seaborn" },
-    { name = "sentence-transformers" },
-    { name = "statsmodels" },
-    { name = "tiktoken" },
-    { name = "trectools" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiolimiter", specifier = ">=1.2.1" },
-    { name = "aquarel", specifier = ">=0.0.7" },
-    { name = "ipython", specifier = ">=9.4.0" },
-    { name = "ir-datasets", specifier = "==0.5.11" },
-    { name = "jupyter", specifier = "==1.1.1" },
-    { name = "krippendorff", specifier = ">=0.8.1" },
-    { name = "lightning-ir", git = "https://github.com/webis-de/lightning-ir.git?rev=adapters" },
-    { name = "mlx-lm", specifier = ">=0.29.1" },
-    { name = "openai", specifier = ">=1.109.1" },
-    { name = "pandas", specifier = "==2.3.2" },
-    { name = "pandas-stubs", specifier = "==2.3.2.250827" },
-    { name = "peft", specifier = ">=0.17.1" },
-    { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "sentence-transformers", specifier = ">=5.1.0" },
-    { name = "statsmodels", specifier = ">=0.14.5" },
-    { name = "tiktoken", specifier = ">=0.11.0" },
-    { name = "trectools", specifier = ">=0.0.50" },
-]
-
-[[package]]
 name = "executing"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3206,6 +3159,53 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/18/5d/3bf57dcd21979b887f014ea83c24ae194cfcd12b9e0fda66b957c69d1fca/setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c", size = 1319958, upload-time = "2025-05-27T00:56:51.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922", size = 1201486, upload-time = "2025-05-27T00:56:49.664Z" },
+]
+
+[[package]]
+name = "sigir26-topic-adapters-as-judges"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiolimiter" },
+    { name = "aquarel" },
+    { name = "ipython" },
+    { name = "ir-datasets" },
+    { name = "jupyter" },
+    { name = "krippendorff" },
+    { name = "lightning-ir" },
+    { name = "mlx-lm" },
+    { name = "openai" },
+    { name = "pandas" },
+    { name = "pandas-stubs" },
+    { name = "peft" },
+    { name = "python-dotenv" },
+    { name = "seaborn" },
+    { name = "sentence-transformers" },
+    { name = "statsmodels" },
+    { name = "tiktoken" },
+    { name = "trectools" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiolimiter", specifier = ">=1.2.1" },
+    { name = "aquarel", specifier = ">=0.0.7" },
+    { name = "ipython", specifier = ">=9.4.0" },
+    { name = "ir-datasets", specifier = "==0.5.11" },
+    { name = "jupyter", specifier = "==1.1.1" },
+    { name = "krippendorff", specifier = ">=0.8.1" },
+    { name = "lightning-ir", git = "https://github.com/webis-de/lightning-ir.git?rev=adapters" },
+    { name = "mlx-lm", specifier = ">=0.29.1" },
+    { name = "openai", specifier = ">=1.109.1" },
+    { name = "pandas", specifier = "==2.3.2" },
+    { name = "pandas-stubs", specifier = "==2.3.2.250827" },
+    { name = "peft", specifier = ">=0.17.1" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
+    { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "sentence-transformers", specifier = ">=5.1.0" },
+    { name = "statsmodels", specifier = ">=0.14.5" },
+    { name = "tiktoken", specifier = ">=0.11.0" },
+    { name = "trectools", specifier = ">=0.0.50" },
 ]
 
 [[package]]

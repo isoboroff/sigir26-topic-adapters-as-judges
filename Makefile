@@ -1,4 +1,4 @@
-data: data/external/robust04.parquet
+data: data/external/train-robust04.parquet
 
-data/external/robust04.parquet:
-    uv run scripts/data_robust04.py --output_path=data/external/robust04.parquet
+data/external/train-robust04.parquet:
+	uv run topic-judges data robust04 --output=data/external/train-robust04.parquet
