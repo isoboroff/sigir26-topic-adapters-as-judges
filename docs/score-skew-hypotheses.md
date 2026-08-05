@@ -164,6 +164,41 @@ default.
 - If a topic's rank window can't supply enough hard negatives, top up from
   random and `log()` the shortfall (no silent caps).
 
+**Training sets built for the experiment** (data is not in the repo; regenerate
+with these commands — deterministic given `--seed`). Both use the top-3000 BM25
+run and the default `--rank-window 50 2000`:
+
+```sh
+# 5/95 balance, hard negatives (production class balance)
+topic-judges data cdet-train \
+  --negatives hard --bm25-run data/external/cdet-bm25-results.trec \
+  --neg-pos-ratio 19 --seed 42 \
+  --output data/external/train-cdet-hard-5-95.parquet
+
+# 50/50 balance, hard negatives (ratio 1)
+topic-judges data cdet-train \
+  --negatives hard --bm25-run data/external/cdet-bm25-results.trec \
+  --neg-pos-ratio 1 --seed 42 \
+  --output data/external/train-cdet-hard-50-50.parquet
+```
+
+Resulting composition (validated: exact per-query balance, no positive leaked
+into negatives, no intra-topic duplicates):
+
+| Set | Rows | Balance | Hard negatives |
+| --- | --- | --- | --- |
+| `train-cdet-hard-5-95` | 82,960 | 4,148 pos / 78,812 neg | **89.2%** BM25-window (11% random top-up) |
+| `train-cdet-hard-50-50` | 8,296 | 4,148 / 4,148 | **100%** BM25-window (no top-up) |
+
+**Confound to keep in mind.** The two sets differ in *both* class balance and
+hard-negative purity: 5/95 needs `19 × n_pos` negatives, which exceeds the
+window on high-positive topics (e.g. `cd2026_005`, 244 positives), so ~11% fall
+back to random; 50/50 needs only `1 × n_pos`, fully suppliable as hard. So a
+difference between the two runs cannot be attributed to balance alone. 50/50 is
+the clean all-hard set; 5/95 is the production-balance ("mostly hard") set. Both
+are compared against the original random-negative baseline
+(`train-cdet.parquet`).
+
 ### H6 — MSE-on-probability is the wrong objective
 
 Regressing a sigmoid/softmax output toward {0, 1} with MSE has vanishing
