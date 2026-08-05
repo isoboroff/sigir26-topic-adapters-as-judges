@@ -16,7 +16,7 @@ from .io import flatten_predictions, align_predictions, write_predictions
 
 def predict(*, encoder_type, base_model_name, adapter_path, predict_data_path,
             query_id, output_path, batch_size=128, max_length=512,
-            binary=True, lora=True, device="cuda"):
+            lora=True, device="cuda"):
     """Predict relevance for ``query_id`` and write JSON Lines to ``output_path``.
 
     Returns the output path. ``base_model_name`` is the original base model used
@@ -32,7 +32,6 @@ def predict(*, encoder_type, base_model_name, adapter_path, predict_data_path,
         batch_size=batch_size,
         max_length=max_length,
         encoder_type=data_encoder_type,
-        binary=binary,
         num_workers=0 if device == "mps" else 4,
     )
 

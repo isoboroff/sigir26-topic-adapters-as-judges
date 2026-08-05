@@ -26,6 +26,16 @@ def add_data_parser(sub):
                     help="Negatives sampled per positive (default 19 => 5/95)")
     ct.add_argument("--seed", type=int, default=None,
                     help="Seed for reproducible negative sampling")
+    ct.add_argument("--negatives", choices=["random", "hard", "mixed"],
+                    default="random",
+                    help="Negative source: random docs, BM25 hard negatives, or a mix")
+    ct.add_argument("--bm25-run", dest="bm25_run", default=None,
+                    help="TREC run file for hard/mixed negatives (top-ranked non-positives)")
+    ct.add_argument("--hard-frac", dest="hard_frac", type=float, default=1.0,
+                    help="Fraction of negatives drawn from BM25 when --negatives mixed")
+    ct.add_argument("--rank-window", dest="rank_window", type=int, nargs=2,
+                    metavar=("LO", "HI"), default=[50, 2000],
+                    help="Inclusive 1-indexed BM25 rank range for hard negatives (default 50 2000)")
     ct.set_defaults(func=_run_cdet_train)
 
     cp = dsub.add_parser("cdet-predict",
@@ -56,7 +66,8 @@ def _run_cdet_train(args):
     from .cdet import build_train
     build_train(topics_path=args.topics_path, coll_path=args.coll_path,
                 output_path=args.output_path, neg_pos_ratio=args.neg_pos_ratio,
-                seed=args.seed)
+                seed=args.seed, negatives=args.negatives, bm25_run=args.bm25_run,
+                hard_frac=args.hard_frac, rank_window=tuple(args.rank_window))
 
 
 def _run_cdet_predict(args):

@@ -19,7 +19,7 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
           val_data_path=None, predict_data_path=None, lora=False,
           batch_size=64, accumulate_batches=1, max_epochs=10,
           learning_rate=1e-4, lora_r=64, lora_alpha=128, lora_dropout=0.1,
-          max_length=512, binary=True, predict=False, seed=159410123,
+          max_length=512, class_balance=None, predict=False, seed=159410123,
           device="mps"):
     """Fit and save a judge adapter. Returns the saved adapter path.
 
@@ -27,6 +27,9 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
     When ``predict`` is True, runs a prediction pass over ``predict_data_path``
     (defaults to the training data if not given) and writes predictions.json
     beside the adapter.
+
+    ``class_balance`` selects the loss weighting (default reproduces the
+    original 0.95/0.05; ``"off"`` = plain MSE) -- see topic_judges.models.
     """
     pl.seed_everything(seed)
     run = f"{encoder_type}-{model_name.split('/')[-1]}-{'lora' if lora else 'native'}-{query_id}"
@@ -35,6 +38,7 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
     model, data_encoder_type = build_model(
         encoder_type, model_name, lora=lora, learning_rate=learning_rate,
         lora_r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+        class_balance=class_balance,
     )
 
     data_module = RelevanceDataModule(
@@ -46,7 +50,6 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
         batch_size=batch_size,
         max_length=max_length,
         encoder_type=data_encoder_type,
-        binary=binary,
         num_workers=0 if device == 'mps' else 4,
     )
 
