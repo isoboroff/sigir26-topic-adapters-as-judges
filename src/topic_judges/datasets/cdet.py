@@ -62,7 +62,7 @@ def _load_collection(coll_path, docs):
 def build_train(*, topics_path, coll_path, output_path,
                 neg_pos_ratio=DEFAULT_NEG_POS_RATIO, seed=None,
                 negatives="random", bm25_run=None, hard_frac=1.0,
-                rank_window=(50, 1000), log=print):
+                rank_window=(50, 2000), log=print):
     """Build the CDet training parquet: positives from topics + sampled negatives.
 
     Negatives are drawn at ``neg_pos_ratio`` per positive (default 19 => 5/95).
@@ -77,7 +77,8 @@ def build_train(*, topics_path, coll_path, output_path,
     ``bm25_run`` is the path to a TREC run file, required for hard/mixed.
     ``rank_window`` is an inclusive 1-indexed (lo, hi) BM25 rank range. See
     docs/score-skew-hypotheses.md (H5-fix) for why hard negatives and these
-    defaults.
+    defaults (50-2000: enough supply for hard_frac<=0.5 across all topics while
+    excluding the noisiest rank tail).
     """
     if negatives not in ("random", "hard", "mixed"):
         raise ValueError(f"Unknown negatives mode: {negatives!r}")

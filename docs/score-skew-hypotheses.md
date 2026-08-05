@@ -110,28 +110,41 @@ lexically on-topic docs that are (mostly) not relevant — the hard boundary we
 want the judge to learn. Standard hard-negative mining.
 
 **Available data:** `data/external/cdet-bm25-results.trec` — TREC run format,
-top-1000 per topic, 50 topics, query = the same string used in
+top-3000 per topic, 50 topics, query = the same string used in
 `train-cdet.parquet`.
 
-**Overlap analysis** (checked 2026-08-05, vs. `train-cdet.parquet` positives):
+**Overlap analysis** (vs. `train-cdet.parquet` positives):
 
-- **71.3%** of known positives (2,959 / 4,148) appear in the BM25 top-1000.
-- Positives rank **high**: median rank 72, p25 rank 25.
-- Positives within top-k (as % of retrieved positives): top-10 → 11%,
-  top-25 → 25%, top-50 → 41%, top-100 → 59%, top-200 → 74%, top-500 → 91%.
+- **80.4%** of known positives (3,335 / 4,148) appear in the BM25 top-3000
+  (was 71.3% at top-1000; extending the run to 3000 recovers the tail — 100% of
+  *retrieved* positives are within 3000, i.e. no positive this run finds ranks
+  deeper than 3000).
+- Positives rank **high**: median rank 94, p25 rank 30, p75 rank 353.
+- Positives within top-k (as % of retrieved positives): top-25 → 22%,
+  top-50 → 37%, top-100 → 52%, top-500 → 81%, top-1000 → 89%, top-2000 → 97%,
+  top-3000 → 100%.
 
 **Two consequences the numbers force:**
 
 1. **False negatives are a real risk.** BM25 hits enrich for relevance, so
    BM25 top docs that are not *known* positives include many *unjudged*
-   positives — concentrated at the top. Excluding known positives is mandatory
-   but not sufficient. Mitigate with a **rank window** (skip the top, which is
-   ~25% known-positives) and a **hard/random mix** (keep clean easy negatives as
-   an anchor).
-2. **BM25 ↔ human judgments diverge** for these narrative queries (only 71% of
-   positives retrieved at all). This *strengthens* the hard-negative case (BM25
-   surfaces lexically-similar-but-not-judged-relevant docs) but also means BM25
-   relevance is a noisy proxy — another reason to mix rather than go 100% hard.
+   positives — concentrated at the top (37% of retrieved positives fall in the
+   top 50). Excluding known positives is mandatory but not sufficient. Mitigate
+   with a **rank window** (skip the top) and a **hard/random mix** (keep clean
+   easy negatives as an anchor).
+2. **BM25 ↔ human judgments diverge** for these narrative queries (~20% of
+   positives not retrieved even at depth 3000). This *strengthens* the
+   hard-negative case (BM25 surfaces lexically-similar-but-not-judged-relevant
+   docs) but also means BM25 relevance is a noisy proxy — another reason to mix
+   rather than go 100% hard.
+
+**Supply vs. demand** (rank window 50–2000, `neg_pos_ratio=19`): every topic can
+fill its hard quota at `hard_frac <= 0.5` with **zero** random top-up; one topic
+falls short at 0.75 and two at 1.0 (topics with many positives need
+`19 × n_pos × hard_frac` negatives, which can exceed the window's non-positive
+supply). Extending the window to 50–3000 raises supply further but pulls in the
+noisiest tail (weakest BM25 hits, more unjudged positives), so 50–2000 is the
+default.
 
 **Builder design** (`datasets/cdet.py`, exposed on `topic-judges data cdet-train`):
 
@@ -144,8 +157,8 @@ top-1000 per topic, 50 topics, query = the same string used in
   - `--hard-frac F` — fraction of each topic's negatives drawn hard (mixed
     only); remainder from the random sampler.
   - `--rank-window LO HI` — inclusive BM25 rank range to draw hard negatives
-    from (default suggestion `50 1000`: past the ~25%-positive top and near the
-    median positive rank of 72).
+    from (default `50 2000`: skips the top ~37%-positive ranks, and supplies
+    enough for `hard_frac <= 0.5` on every topic without random top-up).
   - `--neg-pos-ratio` — unchanged (default 19); only the *source* of negatives
     changes, so runs stay comparable.
 - If a topic's rank window can't supply enough hard negatives, top up from

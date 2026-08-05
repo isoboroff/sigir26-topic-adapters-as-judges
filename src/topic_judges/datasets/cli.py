@@ -34,8 +34,8 @@ def add_data_parser(sub):
     ct.add_argument("--hard-frac", dest="hard_frac", type=float, default=1.0,
                     help="Fraction of negatives drawn from BM25 when --negatives mixed")
     ct.add_argument("--rank-window", dest="rank_window", type=int, nargs=2,
-                    metavar=("LO", "HI"), default=[50, 1000],
-                    help="Inclusive 1-indexed BM25 rank range for hard negatives (default 50 1000)")
+                    metavar=("LO", "HI"), default=[50, 2000],
+                    help="Inclusive 1-indexed BM25 rank range for hard negatives (default 50 2000)")
     ct.set_defaults(func=_run_cdet_train)
 
     cp = dsub.add_parser("cdet-predict",

@@ -103,7 +103,7 @@ def _sample_random_for_topic(topic, n_neg, already_have, all_doc_ids,
 def sample_hard_negatives(*, positives, topic_docs, doc_topics, docs,
                           narratives, bm25_run, all_doc_ids=None,
                           neg_pos_ratio=DEFAULT_NEG_POS_RATIO, hard_frac=1.0,
-                          rank_window=(50, 1000), rng=None, log=None):
+                          rank_window=(50, 2000), rng=None, log=None):
     """Yield negative rows drawn from BM25 top-ranked non-positives.
 
     For each topic, take ``hard_frac`` of its ``neg_pos_ratio`` * n_pos
