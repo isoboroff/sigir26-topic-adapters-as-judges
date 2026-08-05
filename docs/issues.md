@@ -63,8 +63,7 @@ _Last updated: 2026-08-05._
   --lora fix). Push and open a PR when ready.
 - [ ] **`refactor/relevance-judge-package` branch still exists locally** after
   its PR merged (#1). Safe to delete.
-- [ ] **`.DS_Store` not in `.gitignore`** — shows up as untracked in every
-  status. Add it.
+- [x] **`.DS_Store` in `.gitignore`** — added.
 - [ ] **Data files are not in the repo by design.** `train-cdet*.parquet`,
   `test-cdet.parquet`, and `cdet-bm25-results.trec` are regenerated from
   documented commands (`score-skew-hypotheses.md`, builder CLIs). Keep the
