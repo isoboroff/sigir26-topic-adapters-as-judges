@@ -19,7 +19,7 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
           val_data_path=None, predict_data_path=None, lora=False,
           batch_size=64, accumulate_batches=1, max_epochs=10,
           learning_rate=1e-4, lora_r=64, lora_alpha=128, lora_dropout=0.1,
-          max_length=512, binary=True, predict=False, seed=159410123,
+          max_length=512, predict=False, seed=159410123,
           device="mps"):
     """Fit and save a judge adapter. Returns the saved adapter path.
 
@@ -46,7 +46,6 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
         batch_size=batch_size,
         max_length=max_length,
         encoder_type=data_encoder_type,
-        binary=binary,
         num_workers=0 if device == 'mps' else 4,
     )
 

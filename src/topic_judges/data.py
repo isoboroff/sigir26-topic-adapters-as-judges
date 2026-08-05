@@ -45,7 +45,7 @@ class RelevanceDataModule(pl.LightningDataModule):
                  predict_data_path=None,
                  query_id="301",
                  tokenizer=None, batch_size=16, max_length=512,
-                 num_workers=4, encoder_type="cross", binary: bool = True):
+                 num_workers=4, encoder_type="cross"):
         super().__init__()
         self.train_data_path = train_data_path
         self.val_data_path = val_data_path
@@ -56,7 +56,6 @@ class RelevanceDataModule(pl.LightningDataModule):
         self.max_length = max_length
         self.num_workers = num_workers
         self.encoder_type = encoder_type
-        self.binary = binary
 
         self.train_data = self.val_data = self.predict_data = None
         self.train_dataset = self.val_dataset = self.predict_dataset = None
