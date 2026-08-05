@@ -46,6 +46,26 @@ input, and LoRA on 5% positives can push it further toward "true."
   is real and independent of training.
 - Follow-up: wrap inputs in the actual MonoT5 template and re-check.
 
+**How to run (base model, no LoRA):** point `predict` at the base checkpoint
+with `--lora` omitted, then summarize the scores:
+
+```sh
+# score cd2026_001 with the untuned base model (no adapter)
+topic-judges predict \
+  --encoder-type mono \
+  --base-model-name castorini/monot5-base-msmarco-10k \
+  --adapter-path castorini/monot5-base-msmarco-10k \
+  --predict-data data/external/test-cdet.parquet \
+  --query-id cd2026_001 \
+  --output ./predictions/base-cd2026_001.jsonl
+
+topic-judges score-dist ./predictions/base-cd2026_001.jsonl
+```
+
+`score-dist` prints mean / quantiles / %>0.5 and a text histogram over [0, 1]
+for any predictions jsonl — reuse it for the LoRA and full-fine-tune runs and
+compare the three distributions for the same query.
+
 ### H2 — Loss weighting sets the target mean, independent of data balance
 
 With `weight = label*0.9 + 0.05`, positives count 19× more than negatives. MSE on

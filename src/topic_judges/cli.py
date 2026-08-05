@@ -54,9 +54,18 @@ def _add_predict_parser(sub):
     p.add_argument("--batch-size", dest="batch_size", type=int, default=128)
     p.add_argument("--max-length", dest="max_length", type=int, default=512)
     p.add_argument("--binary", action="store_true", default=True)
-    p.add_argument("--lora", action="store_true", default=True)
+    p.add_argument("--lora", action="store_true",
+                   help="Load a LoRA adapter; omit for a base or full-fine-tuned model directory")
     p.add_argument("--device", default="cuda")
     p.set_defaults(func=_run_predict)
+
+
+def _add_score_dist_parser(sub):
+    p = sub.add_parser("score-dist",
+                       help="Summarize the score distribution of a predictions jsonl")
+    p.add_argument("path", help="Predictions JSON Lines file (from `topic-judges predict`)")
+    p.add_argument("--bins", type=int, default=20, help="Histogram bins over [0, 1]")
+    p.set_defaults(func=_run_score_dist)
 
 
 def _run_train(args):
@@ -102,12 +111,18 @@ def _run_predict(args):
     )
 
 
+def _run_score_dist(args):
+    from .scoredist import run
+    run(args.path, bins=args.bins)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="topic-judges",
                                      description="Topic-specific relevance judges")
     sub = parser.add_subparsers(dest="command", required=True)
     _add_train_parser(sub)
     _add_predict_parser(sub)
+    _add_score_dist_parser(sub)
 
     # `data` subcommands are registered by the datasets package (step 5).
     try:
