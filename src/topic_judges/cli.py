@@ -33,6 +33,10 @@ def _add_train_parser(sub):
     p.add_argument("--lora-alpha", dest="lora_alpha", type=int, default=128)
     p.add_argument("--lora-dropout", dest="lora_dropout", type=float, default=0.1)
     p.add_argument("--max-length", dest="max_length", type=int, default=512)
+    p.add_argument("--class-balance", dest="class_balance",
+                   choices=["inverse-ratio", "off"], default="inverse-ratio",
+                   help="Loss weighting: inverse-ratio (0.95/0.05, positives 19x) "
+                        "or off (plain MSE)")
     p.add_argument("--predict", action="store_true",
                    help="After training, predict and write predictions.json")
     p.add_argument("--seed", type=int, default=159410123)
@@ -85,6 +89,7 @@ def _run_train(args):
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         max_length=args.max_length,
+        class_balance=args.class_balance,
         predict=args.predict,
         seed=args.seed,
         device=args.device,

@@ -41,17 +41,47 @@ def _relevance_metrics():
     })
 
 
-def _weighted_mse(preds, labels):
-    """MSE weighted by ``(label * 0.9) + 0.05`` (positives 19x negatives)."""
-    weight = (labels * 0.9) + 0.05
+def _weighted_mse(preds, labels, pos_weight=0.95, neg_weight=0.05):
+    """MSE with per-example weights interpolated by label.
+
+    ``weight = label * (pos_weight - neg_weight) + neg_weight``. The defaults
+    (0.95 / 0.05) reproduce the original ``(label*0.9)+0.05`` -- positives
+    weighted 19x negatives, the inverse of the 5/95 training ratio (design
+    sec 3a.3). Passing ``pos_weight == neg_weight`` (e.g. class_balance="off")
+    makes the weighting uniform, i.e. plain MSE.
+    """
+    weight = labels * (pos_weight - neg_weight) + neg_weight
     return torch.nn.functional.mse_loss(preds, labels, weight=weight)
 
 
+# Named class-balance presets -> (pos_weight, neg_weight) for the loss.
+# "inverse-ratio" is the original behavior; "off" is uniform (plain MSE).
+CLASS_BALANCE = {
+    "inverse-ratio": (0.95, 0.05),
+    "off": (1.0, 1.0),
+}
+
+
+def resolve_class_balance(class_balance):
+    """Map a class_balance name (or None -> default) to (pos_weight, neg_weight)."""
+    if class_balance is None:
+        class_balance = "inverse-ratio"
+    try:
+        return CLASS_BALANCE[class_balance]
+    except KeyError:
+        raise ValueError(
+            f"Unknown class_balance {class_balance!r}; "
+            f"choose from {sorted(CLASS_BALANCE)}"
+        ) from None
+
+
 class BiEncoderLoRA(pl.LightningModule):
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1):
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1, pos_weight=0.95, neg_weight=0.05):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
+        self.pos_weight = pos_weight
+        self.neg_weight = neg_weight
 
         # Load the base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -99,7 +129,7 @@ class BiEncoderLoRA(pl.LightningModule):
             batch['query_input_ids'], batch['query_attention_mask'],
             batch['doc_input_ids'], batch['doc_attention_mask']
         )
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log('loss_train', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
@@ -109,7 +139,7 @@ class BiEncoderLoRA(pl.LightningModule):
             batch['query_input_ids'], batch['query_attention_mask'],
             batch['doc_input_ids'], batch['doc_attention_mask']
         )
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log(log_key, loss, on_step=False, on_epoch=True, prog_bar=False)
         self.metrics((preds > 0.5).int(), (labels > 0.5).int())
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
@@ -133,10 +163,12 @@ class BiEncoderLoRA(pl.LightningModule):
 
 
 class CrossEncoderLoRA(pl.LightningModule):
-    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L12-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1):
+    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L12-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1, pos_weight=0.95, neg_weight=0.05):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
+        self.pos_weight = pos_weight
+        self.neg_weight = neg_weight
 
         # Load the base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -164,14 +196,14 @@ class CrossEncoderLoRA(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
         preds = self.forward(batch['input_ids'], batch['attention_mask'])
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log('loss_train', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def _eval_step(self, batch, log_key):
         labels = batch['labels'].to(dtype=torch.float)
         preds = self.forward(batch['input_ids'], batch['attention_mask'])
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log(log_key, loss, on_step=False, on_epoch=True, prog_bar=False)
         self.metrics((preds > 0.5).int(), (labels > 0.5).int())
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
@@ -192,10 +224,12 @@ class CrossEncoderLoRA(pl.LightningModule):
 
 
 class MonoDecoderLoRA(pl.LightningModule):
-    def __init__(self, model_name="castorini/monot5-base-msmarco-10k", prediction_token_false='▁false', prediction_token_true='▁true', learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1):
+    def __init__(self, model_name="castorini/monot5-base-msmarco-10k", prediction_token_false='▁false', prediction_token_true='▁true', learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1, pos_weight=0.95, neg_weight=0.05):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
+        self.pos_weight = pos_weight
+        self.neg_weight = neg_weight
 
         # Load the base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -238,14 +272,14 @@ class MonoDecoderLoRA(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         labels = batch['labels'].to(dtype=torch.float)
         preds = self.forward(batch['input_ids'], batch['attention_mask'])
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log('loss_train', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def _eval_step(self, batch, log_key):
         labels = batch['labels'].to(dtype=torch.float)
         preds = self.forward(batch['input_ids'], batch['attention_mask'])
-        loss = _weighted_mse(preds, labels)
+        loss = _weighted_mse(preds, labels, self.pos_weight, self.neg_weight)
         self.log(log_key, loss, on_step=False, on_epoch=True, prog_bar=False)
         self.metrics((preds > 0.5).int(), (labels > 0.5).int())
         self.log_dict(self.metrics, on_step=False, on_epoch=True)
@@ -275,18 +309,23 @@ _ENCODERS = {
 
 
 def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
-                lora_r=16, lora_alpha=32, lora_dropout=0.1):
+                lora_r=16, lora_alpha=32, lora_dropout=0.1, class_balance=None):
     """Instantiate a judge model.
 
     Returns ``(model, data_encoder_type)`` where ``data_encoder_type`` is what
     :class:`~topic_judges.data.RelevanceDataModule` should tokenize for. This is
     the single home for the ``mono`` -> ``cross`` remap.
+
+    ``class_balance`` selects the loss weighting: ``None``/``"inverse-ratio"``
+    reproduces the original 0.95/0.05 (positives 19x); ``"off"`` is uniform
+    (plain MSE). See :func:`resolve_class_balance`.
     """
     try:
         model_cls, data_encoder_type = _ENCODERS[encoder_type]
     except KeyError:
         raise ValueError(f"Unknown encoder type: {encoder_type!r}") from None
 
+    pos_weight, neg_weight = resolve_class_balance(class_balance)
     model = model_cls(
         model_name=model_name,
         learning_rate=learning_rate,
@@ -294,6 +333,8 @@ def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
         lora_r=lora_r,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        pos_weight=pos_weight,
+        neg_weight=neg_weight,
     )
     return model, data_encoder_type
 

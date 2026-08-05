@@ -21,7 +21,8 @@ _Last updated: 2026-08-05._
   compare against the random-negative baseline. Note the balance-vs-purity
   confound between the two sets (documented under H5-fix).
 - [ ] **H2 — the not-yet-tried 2×2 corner:** no weighting + balanced split.
-  Blocked on the `class_balance` toggle (see code gaps).
+  Now a one-flag run: `topic-judges train --class-balance off` on the 50/50
+  training set.
 - [ ] **H3 — separation / threshold check.** Needs labels: a held-out labeled
   slice of `train-cdet.parquet` (via `--val-data`) or Robust04/TREC-DL. Report
   AUC/AP + histogram-by-label. Reframe: for annotator selection this is a
@@ -45,15 +46,10 @@ _Last updated: 2026-08-05._
 
 ## Code gaps (docs assume, code doesn't do yet)
 
-- [ ] **`class_balance` toggle does not exist.** `refactor-design.md` §3a.3 and
-  `score-skew-hypotheses.md` (H2) both describe it as a one-flag run, but
-  `models._weighted_mse` is hardcoded `(label*0.9)+0.05` with no parameter.
-  Needed to run the H2 experiment. Should thread a knob from `train()` → the
-  model → the loss (default reproduces today's numbers).
-- [ ] **`--binary` flag is a no-op that can't be turned off.**
-  `action="store_true", default=True` in both `train` and `predict` parsers, and
-  nothing downstream branches on it meaningfully. Decide: wire it up or remove
-  it. (Same `default=True` quirk we just fixed on `--lora`.)
+- [x] **`class_balance` toggle** — done. `topic-judges train --class-balance
+  {inverse-ratio,off}`; `inverse-ratio` (default) reproduces the original
+  0.95/0.05, `off` is plain MSE. Threaded `build_model` → model → `_weighted_mse`.
+- [x] **`--binary` flag** — removed (was a no-op that couldn't be turned off).
 - [ ] **Full-fine-tune path is untested.** `load_adapter(lora=False)` reloads a
   model directory via `from_pretrained`; the base-model and full-FT cases share
   this path. Works by design, but no regression coverage like predict has.

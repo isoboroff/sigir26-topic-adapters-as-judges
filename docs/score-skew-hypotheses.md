@@ -78,7 +78,9 @@ still skewed** — because the weight itself (not the data ratio) sets the targe
   on/off × balanced/5-95 split) and see *where the mass moves* — but not whether
   the result is any good.
 - Key experiment (the not-yet-tried 2×2 corner): `class_balance` **off** (no
-  weighting) + balanced split. The refactor exposes this as a one-flag run.
+  weighting) + balanced split. Now a one-flag run:
+  `topic-judges train --class-balance off ...` (default `inverse-ratio`
+  reproduces the original 0.95/0.05 weighting) on the 50/50 training set.
 
 ### H3 — 0.5 is the wrong threshold; the model may separate fine, just not at 0.5
 
