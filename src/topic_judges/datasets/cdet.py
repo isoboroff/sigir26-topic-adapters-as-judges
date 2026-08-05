@@ -18,7 +18,14 @@ import random
 
 from tqdm import tqdm
 
-from .common import UNLABELED, rows_to_parquet, sample_negatives, DEFAULT_NEG_POS_RATIO
+from .common import (
+    UNLABELED,
+    DEFAULT_NEG_POS_RATIO,
+    rows_to_parquet,
+    sample_negatives,
+    sample_hard_negatives,
+    read_trec_run,
+)
 
 
 def _read_topics(topics_path):
@@ -53,11 +60,30 @@ def _load_collection(coll_path, docs):
 
 
 def build_train(*, topics_path, coll_path, output_path,
-                neg_pos_ratio=DEFAULT_NEG_POS_RATIO, seed=None):
+                neg_pos_ratio=DEFAULT_NEG_POS_RATIO, seed=None,
+                negatives="random", bm25_run=None, hard_frac=1.0,
+                rank_window=(50, 1000), log=print):
     """Build the CDet training parquet: positives from topics + sampled negatives.
 
     Negatives are drawn at ``neg_pos_ratio`` per positive (default 19 => 5/95).
+
+    ``negatives`` selects the negative source:
+
+    - ``"random"`` (default): random docs from the collection (original behavior).
+    - ``"hard"``: BM25 top-ranked non-positives from ``bm25_run`` within
+      ``rank_window`` (``hard_frac`` forced to 1.0).
+    - ``"mixed"``: ``hard_frac`` from BM25, the rest random.
+
+    ``bm25_run`` is the path to a TREC run file, required for hard/mixed.
+    ``rank_window`` is an inclusive 1-indexed (lo, hi) BM25 rank range. See
+    docs/score-skew-hypotheses.md (H5-fix) for why hard negatives and these
+    defaults.
     """
+    if negatives not in ("random", "hard", "mixed"):
+        raise ValueError(f"Unknown negatives mode: {negatives!r}")
+    if negatives in ("hard", "mixed") and not bm25_run:
+        raise ValueError(f"negatives={negatives!r} requires bm25_run")
+
     topics = _read_topics(topics_path)
 
     doc_topics = collections.defaultdict(set)
@@ -91,8 +117,9 @@ def build_train(*, topics_path, coll_path, output_path,
             })
 
     rng = random.Random(seed) if seed is not None else random
-    rows.extend(tqdm(
-        sample_negatives(
+
+    if negatives == "random":
+        neg_iter = sample_negatives(
             positives=all_rel,
             all_doc_ids=all_docs,
             topic_docs=topic_docs,
@@ -101,9 +128,25 @@ def build_train(*, topics_path, coll_path, output_path,
             narratives=narratives,
             neg_pos_ratio=neg_pos_ratio,
             rng=rng,
-        ),
-        desc="Adding negatives",
-    ))
+        )
+    else:
+        run = read_trec_run(bm25_run)
+        neg_iter = sample_hard_negatives(
+            positives=all_rel,
+            topic_docs=topic_docs,
+            doc_topics=doc_topics,
+            docs=docs,
+            narratives=narratives,
+            bm25_run=run,
+            all_doc_ids=all_docs,
+            neg_pos_ratio=neg_pos_ratio,
+            hard_frac=1.0 if negatives == "hard" else hard_frac,
+            rank_window=rank_window,
+            rng=rng,
+            log=log,
+        )
+
+    rows.extend(tqdm(neg_iter, desc=f"Adding negatives ({negatives})"))
 
     return rows_to_parquet(rows, output_path)
 
