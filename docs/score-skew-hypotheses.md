@@ -143,6 +143,28 @@ discriminate on and falls back to its prior.
   larger budget (or query truncation) and check whether separation improves
   (needs labels for the "separation" part; truncation rate itself is label-free).
 
+**RESULT (2026-08-05, `cd2026_001`, monoT5 tokenizer, cross-style single
+sequence): truncation is severe.**
+
+- The narrative query alone is **333 tokens** of the 512 budget.
+- **97.7%** of query+doc pairs exceed 512 tokens.
+- After the query, only ~179 tokens remain for the document → on average
+  **~26% of the document is retained**; ~74% is dropped before the model sees it.
+- Combined-length percentiles: p50 ≈ 1,221, p75 ≈ 1,672, p90 ≈ 2,308,
+  p95 ≈ 2,892, p99 ≈ 4,271 tokens.
+
+Combined with H1 (the skew is a base-model prior, present with no training), this
+strongly implicates truncation: the model is largely scoring query + a sliver of
+document. **Fix implemented** (branch `feature/modernbert-biencoder`): a
+long-context **bi-encoder** encodes query and document separately, giving each
+its own length budget. Using `joe32140/ModernBERT-base-msmarco` via
+`topic-judges train --encoder-type bi --sentence-transformer --max-length-doc
+2048` recovers most of the document (news articles are front-loaded, so
+front-truncation at 2048 keeps the lead + body). See
+`docs/plan-modernbert-biencoder.md` and `docs/understanding-bi-encoders.md`.
+Effect on ranking is **deferred to the human assessments** gathered from the
+prioritized pools (no CDet labels now).
+
 ### H5 — Sampled negatives are noisy (actually-relevant) positives
 
 CDet negatives are random collection docs *assumed* irrelevant. For broad

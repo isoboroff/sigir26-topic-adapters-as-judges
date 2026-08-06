@@ -37,18 +37,31 @@ _Last updated: 2026-08-05._
   missing template causes the skew, but the CDet narrative + document already
   overflows MonoT5's 512-token window, so the template can't be applied without
   first solving length. Converges with H4 / ModernBERT below.
-- [ ] **ModernBERT long-context model** (`joe32140/ModernBERT-large-msmarco`).
-  It's a *bi-encoder* sentence-transformer (8192 ctx), so it maps to the
-  `BiEncoderLoRA` path — but that path mean-pools + adds an untrained 128-dim
-  projection, which discards the checkpoint's trained embedding. Loading it
-  properly (sentence-transformers pooling, drop/rethink the projection) is a
-  real `models.py` change, not a flag. Attacks H4 (truncation) and is the
-  natural fork now that H1 points at the base model / input length, not tuning.
-- [ ] **H4 — truncation impact.** Measure the fraction of pairs hitting
-  `max_length=512` (label-free); compare larger context / query-truncation.
+- [~] **ModernBERT long-context model** — IMPLEMENTED (branch
+  `feature/modernbert-biencoder`), not yet run on GPU. `joe32140/
+  ModernBERT-base-msmarco` (the `base`, not `large` — large doesn't fit the
+  V100s) via the bi-encoder path with a new `--sentence-transformer` mode that
+  keeps the checkpoint's trained pooling, plus `--max-length-doc` for an
+  independent document budget. Chosen on the prior that a ranking-tuned
+  embedding beats a raw MLM. **To run:** see the config in
+  `docs/plan-modernbert-biencoder.md` (start `--max-length-doc 2048`, small
+  batch + grad accum, tune vs. nvidia-smi). **Verification deferred** to the
+  human assessments from the prioritized pools (no CDet labels now).
+- [x] **H4 — truncation impact.** Measured (2026-08-05, `cd2026_001`): query is
+  333 tokens, 97.7% of pairs exceed 512, only ~26% of the doc retained. Confirms
+  truncation is severe; motivates the long-context bi-encoder above. Full
+  numbers in `score-skew-hypotheses.md` (H4).
 - [ ] **H5 caveat — inspect sampled negatives.** Manually eyeball ~20 random
   and ~20 hard negatives per a couple queries for actual relevance (false-negative
   check).
+
+## GPU-box V100 caveat
+
+FlashAttention-2 requires Ampere (sm_80+); the V100 is Volta (sm_70), so
+ModernBERT falls back to SDPA/eager attention whose memory grows ~O(length²).
+Keep `--max-length-doc` moderate (≈2048 covers ~p90 of docs) and use a small
+batch + gradient accumulation; confirm gradient checkpointing is on if pushing
+length higher.
 
 ## Code gaps (docs assume, code doesn't do yet)
 
