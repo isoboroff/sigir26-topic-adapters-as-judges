@@ -68,6 +68,10 @@ def train(*, encoder_type, train_data_path, query_id, model_name, output_dir,
         strategy='auto' if device == 'mps' else 'ddp',
         precision='16-mixed' if device != 'mps' else '32-true',
         accumulate_grad_batches=accumulate_batches,
+        # No validation set => skip the val loop entirely. Returning None from
+        # val_dataloader() is fine single-device but DDP still runs the sanity
+        # check and rejects None, so disable validation here instead.
+        limit_val_batches=0 if val_data_path is None else 1.0,
         callbacks=[],
         enable_checkpointing=False,
     )
