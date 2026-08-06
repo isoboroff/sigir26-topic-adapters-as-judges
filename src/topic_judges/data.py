@@ -45,6 +45,7 @@ class RelevanceDataModule(pl.LightningDataModule):
                  predict_data_path=None,
                  query_id="301",
                  tokenizer=None, batch_size=16, max_length=512,
+                 max_length_doc=None,
                  num_workers=4, encoder_type="cross"):
         super().__init__()
         self.train_data_path = train_data_path
@@ -54,6 +55,9 @@ class RelevanceDataModule(pl.LightningDataModule):
         self.tokenizer = tokenizer
         self.batch_size = batch_size
         self.max_length = max_length
+        # Per-side document cap for the bi-encoder (query uses max_length).
+        # None -> use max_length (original behavior).
+        self.max_length_doc = max_length_doc if max_length_doc is not None else max_length
         self.num_workers = num_workers
         self.encoder_type = encoder_type
 
@@ -98,7 +102,11 @@ class RelevanceDataModule(pl.LightningDataModule):
                 'labels': torch.tensor(relevances, dtype=torch.float),
             }
         else:
-            # Bi-encoder: tokenize queries and documents separately
+            # Bi-encoder: tokenize queries and documents separately, with
+            # independent length caps. Truncation keeps the FRONT of each text
+            # (the tokenizer default): CDet docs are news articles, which are
+            # editorially front-loaded, so the lead carries the relevance signal
+            # -- do not switch to keep-tail.
             query_encoding = self.tokenizer(
                 queries,
                 truncation=True,
@@ -110,7 +118,7 @@ class RelevanceDataModule(pl.LightningDataModule):
                 docs,
                 truncation=True,
                 padding=True,
-                max_length=self.max_length,
+                max_length=self.max_length_doc,
                 return_tensors='pt',
             )
             return {

@@ -76,36 +76,61 @@ def resolve_class_balance(class_balance):
 
 
 class BiEncoderLoRA(pl.LightningModule):
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1, pos_weight=0.95, neg_weight=0.05):
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", learning_rate=2e-5, lora=False, lora_r=16, lora_alpha=32, lora_dropout=0.1, pos_weight=0.95, neg_weight=0.05, sentence_transformer=False):
         super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
         self.pos_weight = pos_weight
         self.neg_weight = neg_weight
+        self.sentence_transformer = sentence_transformer
 
-        # Load the base model and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
+        # See docs/understanding-bi-encoders.md for what these two modes mean.
+        if sentence_transformer:
+            # Load a sentence-transformers checkpoint and keep its *trained*
+            # pooling + normalization -- this is what makes a ranking-tuned
+            # embedding (e.g. ModernBERT-base-msmarco) worth using. Cosine is
+            # scored on the native embedding, so there is no extra projection.
+            # LoRA is applied to the underlying HF transformer (st_model[0]
+            # .auto_model), which is also what we save/load as the adapter.
+            from sentence_transformers import SentenceTransformer
+            self.st_model = SentenceTransformer(model_name)
+            self.tokenizer = self.st_model.tokenizer
+            transformer_module = self.st_model[0]  # models.Transformer
+            self.model = transformer_module.auto_model
+            if lora:
+                self.model = get_peft_model(self.model, self._lora_config(lora_r, lora_alpha, lora_dropout))
+                transformer_module.auto_model = self.model
+            self.projection = None
+        else:
+            # Original recipe (the paper's all-MiniLM setup): raw AutoModel +
+            # mean pooling + a fresh projection head, cosine similarity.
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModel.from_pretrained(model_name)
+            if lora:
+                self.model = get_peft_model(self.model, self._lora_config(lora_r, lora_alpha, lora_dropout))
+            self.projection = nn.Linear(self.model.base_model.config.hidden_size, 128)
 
-        # Configure LoRA
-        if lora:
-            lora_config = LoraConfig(
-                task_type=TaskType.FEATURE_EXTRACTION,
-                inference_mode=False,
-                r=lora_r,
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                target_modules='all-linear',
-            )
-            self.model = get_peft_model(self.model, lora_config)
-
-        # Projection head for similarity scoring
-        self.projection = nn.Linear(self.model.base_model.config.hidden_size, 128)
         self.criterion = nn.MSELoss()
-
         self.metrics = _relevance_metrics()
 
+    @staticmethod
+    def _lora_config(lora_r, lora_alpha, lora_dropout):
+        return LoraConfig(
+            task_type=TaskType.FEATURE_EXTRACTION,
+            inference_mode=False,
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules='all-linear',
+        )
+
     def encode_text(self, input_ids, attention_mask):
+        if self.sentence_transformer:
+            # Run the ST module stack (transformer -> pooling -> normalize) on
+            # our pre-tokenized inputs; it returns 'sentence_embedding'.
+            features = {"input_ids": input_ids, "attention_mask": attention_mask}
+            return self.st_model(features)["sentence_embedding"]
+
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         # Mean pooling
         embeddings = outputs.last_hidden_state
@@ -309,7 +334,8 @@ _ENCODERS = {
 
 
 def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
-                lora_r=16, lora_alpha=32, lora_dropout=0.1, class_balance=None):
+                lora_r=16, lora_alpha=32, lora_dropout=0.1, class_balance=None,
+                sentence_transformer=False):
     """Instantiate a judge model.
 
     Returns ``(model, data_encoder_type)`` where ``data_encoder_type`` is what
@@ -319,6 +345,10 @@ def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
     ``class_balance`` selects the loss weighting: ``None``/``"inverse-ratio"``
     reproduces the original 0.95/0.05 (positives 19x); ``"off"`` is uniform
     (plain MSE). See :func:`resolve_class_balance`.
+
+    ``sentence_transformer`` applies only to the ``bi`` encoder: load the
+    checkpoint via sentence-transformers and keep its trained pooling (see
+    docs/understanding-bi-encoders.md). Ignored by cross/mono.
     """
     try:
         model_cls, data_encoder_type = _ENCODERS[encoder_type]
@@ -326,7 +356,7 @@ def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
         raise ValueError(f"Unknown encoder type: {encoder_type!r}") from None
 
     pos_weight, neg_weight = resolve_class_balance(class_balance)
-    model = model_cls(
+    kwargs = dict(
         model_name=model_name,
         learning_rate=learning_rate,
         lora=lora,
@@ -336,6 +366,9 @@ def build_model(encoder_type, model_name, *, lora=False, learning_rate=2e-5,
         pos_weight=pos_weight,
         neg_weight=neg_weight,
     )
+    if model_cls is BiEncoderLoRA:
+        kwargs["sentence_transformer"] = sentence_transformer
+    model = model_cls(**kwargs)
     return model, data_encoder_type
 
 
@@ -350,5 +383,9 @@ def load_adapter(model, adapter_path, *, lora=True):
         model.model = model.model.merge_and_unload()
     else:
         model.model = model.model.from_pretrained(adapter_path)
+    # In sentence-transformer mode the pipeline reads the transformer from
+    # st_model[0].auto_model, so point it at the freshly (re)loaded weights.
+    if getattr(model, "sentence_transformer", False):
+        model.st_model[0].auto_model = model.model
     model.eval()
     return model

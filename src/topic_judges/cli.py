@@ -33,6 +33,11 @@ def _add_train_parser(sub):
     p.add_argument("--lora-alpha", dest="lora_alpha", type=int, default=128)
     p.add_argument("--lora-dropout", dest="lora_dropout", type=float, default=0.1)
     p.add_argument("--max-length", dest="max_length", type=int, default=512)
+    p.add_argument("--max-length-doc", dest="max_length_doc", type=int, default=None,
+                   help="Bi-encoder only: separate doc length cap (default: --max-length)")
+    p.add_argument("--sentence-transformer", dest="sentence_transformer",
+                   action="store_true",
+                   help="Bi-encoder only: load via sentence-transformers, keep trained pooling")
     p.add_argument("--class-balance", dest="class_balance",
                    choices=["inverse-ratio", "off"], default="inverse-ratio",
                    help="Loss weighting: inverse-ratio (0.95/0.05, positives 19x) "
@@ -56,6 +61,11 @@ def _add_predict_parser(sub):
     p.add_argument("--output", dest="output_path", required=True)
     p.add_argument("--batch-size", dest="batch_size", type=int, default=128)
     p.add_argument("--max-length", dest="max_length", type=int, default=512)
+    p.add_argument("--max-length-doc", dest="max_length_doc", type=int, default=None,
+                   help="Bi-encoder only: separate doc length cap (must match training)")
+    p.add_argument("--sentence-transformer", dest="sentence_transformer",
+                   action="store_true",
+                   help="Bi-encoder only: load via sentence-transformers (must match training)")
     p.add_argument("--lora", action="store_true",
                    help="Load a LoRA adapter; omit for a base or full-fine-tuned model directory")
     p.add_argument("--device", default="cuda")
@@ -89,7 +99,9 @@ def _run_train(args):
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         max_length=args.max_length,
+        max_length_doc=args.max_length_doc,
         class_balance=args.class_balance,
+        sentence_transformer=args.sentence_transformer,
         predict=args.predict,
         seed=args.seed,
         device=args.device,
@@ -107,6 +119,8 @@ def _run_predict(args):
         output_path=args.output_path,
         batch_size=args.batch_size,
         max_length=args.max_length,
+        max_length_doc=args.max_length_doc,
+        sentence_transformer=args.sentence_transformer,
         lora=args.lora,
         device=args.device,
     )
