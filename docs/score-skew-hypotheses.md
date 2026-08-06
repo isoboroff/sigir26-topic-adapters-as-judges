@@ -66,6 +66,38 @@ topic-judges score-dist ./predictions/base-cd2026_001.jsonl
 for any predictions jsonl — reuse it for the LoRA and full-fine-tune runs and
 compare the three distributions for the same query.
 
+**RESULT (2026-08-05, `cd2026_001`, 28,207 pooled docs): H1 CONFIRMED.** The
+**untuned base model** (no adapter, no LoRA, no exposure to CDet data) already
+skews high:
+
+```
+mean 0.7665   median 0.7817   p25 0.6851   p75 0.8607   %>0.5 97.8%
+peak bin [0.80,0.85)   range 0.158–0.995
+```
+
+This is essentially the same skew observed after training. **The skew is not
+caused by training** — not the loss weighting (H2), not the negative sampling
+(H5), not the objective (H6); all of those act only during fine-tuning, and the
+base model has seen none of it. The high P(true) prior is present at step zero,
+so H1 is the root cause and H2/H5/H6 are demoted to at-most-secondary effects.
+
+**Implications:**
+
+- The likely mechanism is the missing MonoT5 template (raw narrative fed with no
+  `Query: … Document: … Relevant:` wrapper → off-distribution input → miscalibrated
+  true/false prior), or the true/false head itself being unsuited to long
+  narrative needs.
+- **Blocker on the obvious follow-up:** wrapping inputs in the MonoT5 template is
+  *not* straightforwardly runnable — the CDet narrative-plus-questions query is
+  already long, and with a document appended the template overflows MonoT5's
+  context window (512 tokens). So the template test can't be done as-is without
+  first addressing length (truncation strategy, query compression, or a
+  long-context base model). See H4 (truncation) and the ModernBERT thread.
+- **For the real goal (annotator selection):** the base scores still *span*
+  0.16–0.99 with real spread, so they may still *rank* usefully despite the
+  miscalibration. Whether the ranking is good is the H3 question (needs labels);
+  the skew alone does not doom rank-based selection.
+
 ### H2 — Loss weighting sets the target mean, independent of data balance
 
 With `weight = label*0.9 + 0.05`, positives count 19× more than negatives. MSE on
@@ -233,12 +265,20 @@ would.
 
 ---
 
-## Suggested first experiment
+## Status / next step
 
-**H1's base-model score histogram** is the cheapest high-information test and the
-only one runnable directly on the unlabeled prediction set: it tells you whether
-the skew exists *before any training*, which would immediately implicate the
-head/template rather than the loss weighting or data. If the base model looks
-fine, the next fork is a labeled held-out CDet split (H3 diagnostic: AUC/AP +
-histogram-by-label) to decide whether this is a ranking-quality problem or just a
-threshold/calibration one.
+**H1's base-model score histogram was run first (cheapest, label-free) and
+CONFIRMED H1** — the skew is present in the untuned base model, so it is not a
+training artifact (H2/H5/H6 demoted). Full result under H1 above.
+
+The obvious follow-up (MonoT5 template) is **blocked on context length**: the
+CDet narrative query + document already overflows MonoT5's 512-token window, so
+the template can't be applied without first solving length. That converges with
+**H4 (truncation)** and the **ModernBERT long-context** thread — the productive
+next fork is a base model / input scheme that fits the long narrative + document,
+not further tuning of the current MonoT5 setup.
+
+Separately, for the actual deliverable (ranking pool docs for annotators), the
+**H3 labeled-holdout check** (AUC/AP + histogram-by-label on a held-out CDet
+split) would tell us whether the skewed-but-spread scores still *rank* well —
+which may make the skew a non-issue for selection regardless of calibration.
